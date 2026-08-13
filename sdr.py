@@ -208,7 +208,7 @@ HTML_TEMPLATE = """\
     /* ------------------------------------------------------------------ */
     .cards {{
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
       gap: 14px;
       margin-bottom: 32px;
     }}
@@ -226,6 +226,7 @@ HTML_TEMPLATE = """\
       letter-spacing: .06em;
       color: var(--muted);
       margin-bottom: 6px;
+      white-space: nowrap;
     }}
 
     .card .value {{
@@ -517,7 +518,7 @@ HTML_TEMPLATE = """\
     <div class="value">{reused_hash_count}</div>
   </div>
   <div class="card red">
-    <div class="label">Accounts w/ Reused PW</div>
+    <div class="label">Reused PW Accounts</div>
     <div class="value">{reused_account_count}</div>
   </div>
 </div>
