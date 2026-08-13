@@ -67,7 +67,13 @@ secretsdump-reporter dump.txt -p hashcat.potfile -o results/report
 secretsdump must be run with `-user-status` to include account status in the output:
 
 ```
-secretsdump.py -user-status <target>
+secretsdump.py -user-status -outputfile dump <target>
+```
+
+This writes the results to `dump.ntds` (among other files). Pass that file to `secretsdump-reporter`:
+
+```
+secretsdump-reporter dump.ntds
 ```
 
 Expected line format:
