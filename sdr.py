@@ -59,6 +59,21 @@ def parse_file(path: str) -> list[dict]:
     return accounts
 
 
+def parse_potfile(path: str) -> dict[str, str]:
+    """Return a dict mapping NT hash (lowercase) -> plaintext password."""
+    cracked: dict[str, str] = {}
+    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+        for raw in fh:
+            line = raw.strip()
+            if not line:
+                continue
+            # hashcat potfile format: hash:password (password may contain colons)
+            parts = line.split(":", 1)
+            if len(parts) == 2:
+                cracked[parts[0].lower()] = parts[1]
+    return cracked
+
+
 # --------------------------------------------------------------------------- #
 #  Analysis                                                                    #
 # --------------------------------------------------------------------------- #
@@ -106,7 +121,7 @@ def analyse(accounts: list[dict]) -> dict:
 #  CSV output                                                                  #
 # --------------------------------------------------------------------------- #
 
-def write_csv(accounts: list[dict], analysis: dict, out_path: str) -> None:
+def write_csv(accounts: list[dict], analysis: dict, cracked: dict[str, str], out_path: str) -> None:
     # Build a lookup: nt_hash -> reuse group index (1-based, None if not reused)
     hash_to_group: dict[str, int] = {}
     for idx, (h, _) in enumerate(analysis["sorted_reused"], 1):
@@ -114,7 +129,7 @@ def write_csv(accounts: list[dict], analysis: dict, out_path: str) -> None:
 
     fieldnames = [
         "domain", "username", "rid", "nt_hash",
-        "account_type", "status", "password_reuse_group",
+        "account_type", "status", "password_reuse_group", "cracked_password",
     ]
     with open(out_path, "w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=fieldnames)
@@ -128,6 +143,7 @@ def write_csv(accounts: list[dict], analysis: dict, out_path: str) -> None:
                 "account_type": "Computer" if a["is_computer"] else "User",
                 "status": a["status"],
                 "password_reuse_group": hash_to_group.get(a["nt_hash"], ""),
+                "cracked_password": cracked.get(a["nt_hash"].lower(), ""),
             })
 
 
@@ -281,6 +297,7 @@ HTML_TEMPLATE = """\
     .badge-disabled {{ background: #3a1a1a; color: var(--danger);  border: 1px solid #f85149; }}
     .badge-computer {{ background: #1a2a3a; color: var(--accent);  border: 1px solid #388bfd; }}
     .badge-user     {{ background: #2a2a1a; color: var(--warn);    border: 1px solid #d29922; }}
+    .badge-cracked  {{ background: #3a3010; color: #e3b341;        border: 1px solid #d29922; }}
 
     /* ------------------------------------------------------------------ */
     /*  Reuse section                                                       */
@@ -317,7 +334,30 @@ HTML_TEMPLATE = """\
     .reuse-header .hash {{
       font-family: var(--mono);
       font-size: 12px;
-      color: var(--muted);
+      color: #8b949e;
+      background: #21262d;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 8px;
+      flex-shrink: 0;
+    }}
+
+    .reuse-header .hash.copyable {{
+      cursor: pointer;
+      transition: border-color .15s, color .15s;
+    }}
+
+    .reuse-header .hash.copyable:hover {{
+      border-color: var(--accent);
+      color: var(--accent);
+    }}
+
+    .reuse-header .hash.copied {{
+      border-color: var(--accent2);
+      color: var(--accent2);
+    }}
+
+    .reuse-header .spacer {{
       flex: 1;
     }}
 
@@ -332,30 +372,50 @@ HTML_TEMPLATE = """\
       transition: transform .2s;
     }}
 
-    .copy-btn {{
-      background: var(--bg2);
-      border: 1px solid var(--border);
+
+    .reuse-body {{ display: none; padding: 0; }}
+    .reuse-body.open {{ display: block; }}
+
+    .reuse-header.cracked {{
+      background: #2a2000;
+      border-bottom-color: #6a4f00;
+    }}
+
+    .reuse-header.cracked:hover {{ background: #3a2d00; }}
+
+    .cracked-pw {{
+      font-family: var(--mono);
+      font-size: 12px;
+      color: #e3b341;
+      background: #3a3010;
+      border: 1px solid #d29922;
       border-radius: 4px;
-      color: var(--muted);
-      cursor: pointer;
-      font-size: 11px;
-      padding: 2px 8px;
+      padding: 1px 8px;
       flex-shrink: 0;
+    }}
+
+    .cracked-pw.copyable {{
+      cursor: pointer;
       transition: border-color .15s, color .15s;
     }}
 
-    .copy-btn:hover {{
-      border-color: var(--accent);
-      color: var(--accent);
+    .cracked-pw.copyable:hover {{
+      border-color: #e3b341;
+      color: #fff;
     }}
 
-    .copy-btn.copied {{
+    .cracked-pw.copied {{
       border-color: var(--accent2);
       color: var(--accent2);
     }}
 
-    .reuse-body {{ display: none; padding: 0; }}
-    .reuse-body.open {{ display: block; }}
+    tr.cracked-row td {{
+      background: #1e1a00 !important;
+    }}
+
+    tr.cracked-row:hover td {{
+      background: #2a2500 !important;
+    }}
 
     /* ------------------------------------------------------------------ */
     /*  Section divider                                                     */
@@ -364,6 +424,39 @@ HTML_TEMPLATE = """\
       border: none;
       border-top: 1px solid var(--border);
       margin: 32px 0;
+    }}
+
+    .section-heading {{
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 28px 0 12px;
+    }}
+
+    .section-heading h2 {{
+      margin: 0;
+    }}
+
+    .toggle-btn {{
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 12px;
+      padding: 3px 10px;
+      transition: border-color .15s, color .15s;
+    }}
+
+    .toggle-btn:hover {{
+      border-color: var(--accent);
+      color: var(--accent);
+    }}
+
+    .toggle-btn.active {{
+      background: #1a2a3a;
+      border-color: var(--accent);
+      color: var(--accent);
     }}
 
     /* ------------------------------------------------------------------ */
@@ -435,6 +528,7 @@ HTML_TEMPLATE = """\
 <h2>Password Reuse</h2>
 {reuse_section}
 
+{cracked_section}
 <script>
 // ---------------------------------------------------------- collapsibles
 function toggleReuse(el) {{
@@ -445,15 +539,25 @@ function toggleReuse(el) {{
 }}
 
 // ---------------------------------------------------------- copy hash
-function copyHash(event, btn, hash) {{
+function copyHash(event, el, text) {{
   event.stopPropagation();
-  navigator.clipboard.writeText(hash).then(() => {{
-    btn.textContent = 'copied!';
-    btn.classList.add('copied');
+  const original = el.textContent;
+  navigator.clipboard.writeText(text).then(() => {{
+    el.textContent = 'copied!';
+    el.classList.add('copied');
     setTimeout(() => {{
-      btn.textContent = 'copy hash';
-      btn.classList.remove('copied');
+      el.textContent = original;
+      el.classList.remove('copied');
     }}, 1500);
+  }});
+}}
+// ---------------------------------------------------------- toggle disabled
+function toggleDisabled() {{
+  const btn  = document.getElementById('cracked-toggle');
+  const hide = btn.classList.toggle('active');
+  btn.textContent = hide ? 'Show Disabled' : 'Hide Disabled';
+  document.querySelectorAll('#cracked-table tbody tr[data-disabled="1"]').forEach(r => {{
+    r.style.display = hide ? 'none' : '';
   }});
 }}
 </script>
@@ -470,7 +574,7 @@ def redact_hash(h: str) -> str:
     return h[:4] + "*" * (len(h) - 8) + h[-4:]
 
 
-def build_reuse_section(analysis: dict, redacted: bool = False) -> str:
+def build_reuse_section(analysis: dict, cracked: dict[str, str], redacted: bool = False) -> str:
     if not analysis["sorted_reused"]:
         return "<p>No password reuse detected.</p>"
 
@@ -479,15 +583,27 @@ def build_reuse_section(analysis: dict, redacted: bool = False) -> str:
         enabled_accs = analysis["reused_enabled"].get(nt_hash, [])
         total_count = len(all_accs)
         enabled_count = len(enabled_accs)
-        display_hash = redact_hash(nt_hash) if redacted else nt_hash
-        copy_btn = "" if redacted else f'<button class="copy-btn" onclick="copyHash(event, this, \'{nt_hash}\')">copy hash</button>\n    '
+        password = cracked.get(nt_hash.lower())
+        if redacted:
+            hash_span = f'<span class="hash">{redact_hash(nt_hash)}</span>'
+        else:
+            hash_span = f'<span class="hash copyable" title="Click to copy" onclick="copyHash(event, this, \'{nt_hash}\')">{nt_hash}</span>'
+
+        if password and redacted:
+            cracked_indicator = '<span class="cracked-pw">CRACKED</span>\n    '
+        elif password:
+            cracked_indicator = f'<span class="cracked-pw copyable" title="Click to copy" onclick="copyHash(event, this, \'{password}\')">{password}</span>\n    '
+        else:
+            cracked_indicator = ""
+
+        header_class = ' cracked' if password else ''
 
         parts.append(f"""
 <div class="reuse-group">
-  <div class="reuse-header" onclick="toggleReuse(this)">
+  <div class="reuse-header{header_class}" onclick="toggleReuse(this)">
     <span class="group-num">{idx}</span>
-    {copy_btn}<span class="hash">{display_hash}</span>
-    <span class="counts">
+    {hash_span}
+    {cracked_indicator}<span class="spacer"></span><span class="counts">
       {total_count} total &nbsp;|&nbsp; {enabled_count} enabled
     </span>
     <span class="chevron">&#9658;</span>
@@ -527,7 +643,64 @@ def build_reuse_section(analysis: dict, redacted: bool = False) -> str:
     return "".join(parts)
 
 
-def write_html(accounts: list[dict], analysis: dict, source_file: str, out_path: str, redacted: bool = False) -> None:
+def build_cracked_section(accounts: list[dict], cracked: dict[str, str], redacted: bool = False) -> str:
+    """Build the 'Cracked Passwords' section listing all accounts with a cracked hash."""
+    cracked_accounts = [a for a in accounts if a["nt_hash"].lower() in cracked]
+    if not cracked_accounts:
+        return ""
+
+    rows = []
+    for a in sorted(cracked_accounts, key=lambda x: (not x["enabled"], x["username"])):
+        status_badge = badge(a["status"], "enabled" if a["enabled"] else "disabled")
+        type_badge = badge("Computer" if a["is_computer"] else "User",
+                           "computer" if a["is_computer"] else "user")
+        password = cracked[a["nt_hash"].lower()]
+        if redacted:
+            hash_cell = f'<span class="mono">{redact_hash(a["nt_hash"])}</span>'
+            pw_cell = badge("CRACKED", "cracked")
+        else:
+            hash_cell = f'<span class="mono cracked-pw copyable" title="Click to copy" onclick="copyHash(event, this, \'{a["nt_hash"]}\')">{a["nt_hash"]}</span>'
+            pw_cell = f'<span class="mono cracked-pw copyable" title="Click to copy" onclick="copyHash(event, this, \'{password}\')">{password}</span>'
+        rows.append(f"""\
+      <tr class="cracked-row" data-disabled="{'1' if not a['enabled'] else '0'}">
+        <td>{a['domain']}</td>
+        <td>{a['username']}</td>
+        <td>{type_badge}</td>
+        <td>{status_badge}</td>
+        <td>{hash_cell}</td>
+        <td>{pw_cell}</td>
+      </tr>
+""")
+
+    pw_header = "Password" if not redacted else "Status"
+    return f"""\
+<hr class="section-divider" />
+
+<!-- ======================================================= Cracked Passwords -->
+<div class="section-heading">
+  <h2>Cracked Passwords</h2>
+  <button class="toggle-btn" id="cracked-toggle" onclick="toggleDisabled()">Hide Disabled</button>
+</div>
+<div class="table-wrap">
+  <table id="cracked-table">
+    <thead>
+      <tr>
+        <th>Domain</th>
+        <th>Username</th>
+        <th>Type</th>
+        <th>Status</th>
+        <th>NT Hash</th>
+        <th>{pw_header}</th>
+      </tr>
+    </thead>
+    <tbody>
+{"".join(rows)}    </tbody>
+  </table>
+</div>
+"""
+
+
+def write_html(accounts: list[dict], analysis: dict, cracked: dict[str, str], source_file: str, out_path: str, redacted: bool = False) -> None:
     reused_account_count = sum(len(v) for v in analysis["reused"].values())
 
     logo_img = f'  <img src="{_LOGO_DATA_URI}" alt="Logo" />\n'
@@ -542,7 +715,8 @@ def write_html(accounts: list[dict], analysis: dict, source_file: str, out_path:
         disabled_computers=len(analysis["disabled_computers"]),
         reused_hash_count=len(analysis["reused"]),
         reused_account_count=reused_account_count,
-        reuse_section=build_reuse_section(analysis, redacted=redacted),
+        reuse_section=build_reuse_section(analysis, cracked, redacted=redacted),
+        cracked_section=build_cracked_section(accounts, cracked, redacted=redacted),
         logo_img=logo_img,
     )
 
@@ -564,6 +738,11 @@ def main() -> None:
         default=None,
         help="Base name for output files (default: input filename without extension)"
     )
+    parser.add_argument(
+        "-p", "--potfile",
+        default=None,
+        help="Path to a hashcat .potfile to match cracked passwords"
+    )
     args = parser.parse_args()
 
     input_path = args.input
@@ -581,16 +760,23 @@ def main() -> None:
         sys.exit(1)
 
     print(f"[*] Parsed {len(accounts)} accounts.")
+
+    cracked: dict[str, str] = {}
+    if args.potfile:
+        cracked = parse_potfile(args.potfile)
+        matched = sum(1 for a in accounts if a["nt_hash"].lower() in cracked)
+        print(f"[*] Potfile loaded: {len(cracked)} hashes, {matched} accounts matched.")
+
     analysis = analyse(accounts)
 
-    print(f"[*] Writing HTML report          -> {html_path}")
-    write_html(accounts, analysis, input_path, html_path)
+    print(f"[*] Writing HTML report            -> {html_path}")
+    write_html(accounts, analysis, cracked, input_path, html_path)
 
     print(f"[*] Writing HTML report (redacted) -> {html_redacted_path}")
-    write_html(accounts, analysis, input_path, html_redacted_path, redacted=True)
+    write_html(accounts, analysis, cracked, input_path, html_redacted_path, redacted=True)
 
-    print(f"[*] Writing CSV                  -> {csv_path}")
-    write_csv(accounts, analysis, csv_path)
+    print(f"[*] Writing CSV                    -> {csv_path}")
+    write_csv(accounts, analysis, cracked, csv_path)
 
     # Quick summary to stdout
     print()
@@ -602,6 +788,9 @@ def main() -> None:
     print(f"  {'Reused NT hashes:':<28} {len(analysis['reused'])}")
     reused_acct = sum(len(v) for v in analysis['reused'].values())
     print(f"  {'Accounts w/ reused pw:':<28} {reused_acct}")
+    if cracked:
+        matched = sum(1 for a in accounts if a["nt_hash"].lower() in cracked)
+        print(f"  {'Cracked accounts:':<28} {matched}")
     print()
 
 
