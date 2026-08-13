@@ -1,0 +1,7 @@
+# Generated reports
+*.html
+*.csv
+
+# Python
+__pycache__/
+*.py[cod]

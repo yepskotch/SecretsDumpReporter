@@ -1,0 +1,609 @@
+#!/usr/bin/env python3
+"""
+SecretsDump Reporter
+Parses secretsdump output (with -user-status) and generates an HTML report
+and CSV file with account statistics and password reuse analysis.
+"""
+
+import argparse
+import csv
+import io
+import re
+import sys
+from collections import defaultdict
+from datetime import datetime
+from pathlib import Path
+
+# --------------------------------------------------------------------------- #
+#  Logo (hardcoded base64)                                                     #
+# --------------------------------------------------------------------------- #
+
+_LOGO_DATA_URI = "data:image/png;base64,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"
+
+
+# --------------------------------------------------------------------------- #
+#  Parsing                                                                     #
+# --------------------------------------------------------------------------- #
+
+LINE_RE = re.compile(
+    r"^(?P<domain>[^\\]+)\\(?P<username>[^:]+)"
+    r":(?P<rid>\d+)"
+    r":(?P<lm_hash>[0-9a-fA-F]+)"
+    r":(?P<nt_hash>[0-9a-fA-F]+)"
+    r":::\s*\(status=(?P<status>Enabled|Disabled)\)",
+    re.IGNORECASE,
+)
+
+
+def is_computer(username: str) -> bool:
+    return username.endswith("$")
+
+
+def parse_file(path: str) -> list[dict]:
+    accounts = []
+    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+        for lineno, raw in enumerate(fh, 1):
+            line = raw.strip()
+            if not line:
+                continue
+            # Strip optional leading line-number prefix (e.g. "1: ")
+            line = re.sub(r"^\d+:\s+", "", line)
+            m = LINE_RE.match(line)
+            if not m:
+                continue
+            d = m.groupdict()
+            d["is_computer"] = is_computer(d["username"])
+            d["enabled"] = d["status"].lower() == "enabled"
+            d["lineno"] = lineno
+            accounts.append(d)
+    return accounts
+
+
+# --------------------------------------------------------------------------- #
+#  Analysis                                                                    #
+# --------------------------------------------------------------------------- #
+
+def analyse(accounts: list[dict]) -> dict:
+    enabled_users = [a for a in accounts if a["enabled"] and not a["is_computer"]]
+    disabled_users = [a for a in accounts if not a["enabled"] and not a["is_computer"]]
+    enabled_computers = [a for a in accounts if a["enabled"] and a["is_computer"]]
+    disabled_computers = [a for a in accounts if not a["enabled"] and a["is_computer"]]
+
+    # Group ALL accounts by NT hash to detect reuse
+    hash_to_accounts: dict[str, list[dict]] = defaultdict(list)
+    for a in accounts:
+        hash_to_accounts[a["nt_hash"]].append(a)
+
+    # A hash is "reused" only when more than one account shares it
+    reused: dict[str, list[dict]] = {
+        h: accs for h, accs in hash_to_accounts.items() if len(accs) > 1
+    }
+
+    # For each reused hash, gather the enabled accounts
+    reused_enabled: dict[str, list[dict]] = {
+        h: [a for a in accs if a["enabled"]]
+        for h, accs in reused.items()
+    }
+
+    # Sort reused hashes by total account count descending
+    sorted_reused = sorted(
+        reused.items(), key=lambda kv: len(kv[1]), reverse=True
+    )
+
+    return {
+        "enabled_users": enabled_users,
+        "disabled_users": disabled_users,
+        "enabled_computers": enabled_computers,
+        "disabled_computers": disabled_computers,
+        "reused": reused,
+        "reused_enabled": reused_enabled,
+        "sorted_reused": sorted_reused,
+        "total": len(accounts),
+    }
+
+
+# --------------------------------------------------------------------------- #
+#  CSV output                                                                  #
+# --------------------------------------------------------------------------- #
+
+def write_csv(accounts: list[dict], analysis: dict, out_path: str) -> None:
+    # Build a lookup: nt_hash -> reuse group index (1-based, None if not reused)
+    hash_to_group: dict[str, int] = {}
+    for idx, (h, _) in enumerate(analysis["sorted_reused"], 1):
+        hash_to_group[h] = idx
+
+    fieldnames = [
+        "domain", "username", "rid", "nt_hash",
+        "account_type", "status", "password_reuse_group",
+    ]
+    with open(out_path, "w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=fieldnames)
+        writer.writeheader()
+        for a in accounts:
+            writer.writerow({
+                "domain": a["domain"],
+                "username": a["username"],
+                "rid": a["rid"],
+                "nt_hash": a["nt_hash"],
+                "account_type": "Computer" if a["is_computer"] else "User",
+                "status": a["status"],
+                "password_reuse_group": hash_to_group.get(a["nt_hash"], ""),
+            })
+
+
+# --------------------------------------------------------------------------- #
+#  HTML output                                                                 #
+# --------------------------------------------------------------------------- #
+
+HTML_TEMPLATE = """\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SecretsDump Report &mdash; {source_file}</title>
+  <style>
+    /* ------------------------------------------------------------------ */
+    /*  Base                                                                */
+    /* ------------------------------------------------------------------ */
+    *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
+
+    :root {{
+      --bg:        #0d1117;
+      --bg2:       #161b22;
+      --bg3:       #21262d;
+      --border:    #30363d;
+      --accent:    #58a6ff;
+      --accent2:   #3fb950;
+      --danger:    #f85149;
+      --warn:      #d29922;
+      --muted:     #8b949e;
+      --text:      #c9d1d9;
+      --text-head: #e6edf3;
+      --radius:    8px;
+      --font:      'Segoe UI', system-ui, -apple-system, sans-serif;
+      --mono:      'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    }}
+
+    body {{
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 14px;
+      line-height: 1.6;
+      padding: 24px;
+    }}
+
+    a {{ color: var(--accent); text-decoration: none; }}
+    a:hover {{ text-decoration: underline; }}
+
+    h1 {{ font-size: 1.6rem; color: var(--text-head); margin-bottom: 4px; }}
+    h2 {{ font-size: 1.15rem; color: var(--text-head); margin: 28px 0 12px; }}
+    h3 {{ font-size: 1rem; color: var(--text-head); margin-bottom: 8px; }}
+
+    .subtitle {{
+      color: var(--muted);
+      font-size: 0.85rem;
+      margin-bottom: 28px;
+    }}
+
+    /* ------------------------------------------------------------------ */
+    /*  Summary cards                                                       */
+    /* ------------------------------------------------------------------ */
+    .cards {{
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 14px;
+      margin-bottom: 32px;
+    }}
+
+    .card {{
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+    }}
+
+    .card .label {{
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }}
+
+    .card .value {{
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--text-head);
+    }}
+
+    .card.green .value  {{ color: var(--accent2); }}
+    .card.red   .value  {{ color: var(--danger);  }}
+    .card.blue  .value  {{ color: var(--accent);  }}
+    .card.warn  .value  {{ color: var(--warn);    }}
+
+    /* ------------------------------------------------------------------ */
+    /*  Tables                                                              */
+    /* ------------------------------------------------------------------ */
+    .table-wrap {{
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 24px;
+    }}
+
+    table {{
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }}
+
+    thead th {{
+      background: var(--bg3);
+      color: var(--text-head);
+      font-weight: 600;
+      padding: 10px 14px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+      cursor: pointer;
+      user-select: none;
+    }}
+
+    thead th:hover {{ background: var(--border); }}
+
+    thead th.sort-asc::after  {{ content: ' ▲'; font-size: 10px; }}
+    thead th.sort-desc::after {{ content: ' ▼'; font-size: 10px; }}
+
+    tbody tr:nth-child(even) {{ background: var(--bg2); }}
+    tbody tr:hover            {{ background: var(--bg3); }}
+
+    tbody td {{
+      padding: 8px 14px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }}
+
+    tbody tr:last-child td {{ border-bottom: none; }}
+
+    .mono {{ font-family: var(--mono); font-size: 12px; }}
+
+    .badge {{
+      display: inline-block;
+      padding: 1px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 600;
+    }}
+
+    .badge-enabled  {{ background: #1a3a27; color: var(--accent2); border: 1px solid #2ea043; }}
+    .badge-disabled {{ background: #3a1a1a; color: var(--danger);  border: 1px solid #f85149; }}
+    .badge-computer {{ background: #1a2a3a; color: var(--accent);  border: 1px solid #388bfd; }}
+    .badge-user     {{ background: #2a2a1a; color: var(--warn);    border: 1px solid #d29922; }}
+
+    /* ------------------------------------------------------------------ */
+    /*  Reuse section                                                       */
+    /* ------------------------------------------------------------------ */
+    .reuse-group {{
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 16px;
+      overflow: hidden;
+    }}
+
+    .reuse-header {{
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      background: var(--bg3);
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+    }}
+
+    .reuse-header:hover {{ background: var(--border); }}
+
+    .reuse-header .group-num {{
+      background: var(--accent);
+      color: var(--bg);
+      border-radius: 50%;
+      width: 24px; height: 24px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700; flex-shrink: 0;
+    }}
+
+    .reuse-header .hash {{
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--muted);
+      flex: 1;
+    }}
+
+    .reuse-header .counts {{
+      font-size: 12px;
+      color: var(--text);
+    }}
+
+    .reuse-header .chevron {{
+      font-size: 12px;
+      color: var(--muted);
+      transition: transform .2s;
+    }}
+
+    .copy-btn {{
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 11px;
+      padding: 2px 8px;
+      flex-shrink: 0;
+      transition: border-color .15s, color .15s;
+    }}
+
+    .copy-btn:hover {{
+      border-color: var(--accent);
+      color: var(--accent);
+    }}
+
+    .copy-btn.copied {{
+      border-color: var(--accent2);
+      color: var(--accent2);
+    }}
+
+    .reuse-body {{ display: none; padding: 0; }}
+    .reuse-body.open {{ display: block; }}
+
+    /* ------------------------------------------------------------------ */
+    /*  Section divider                                                     */
+    /* ------------------------------------------------------------------ */
+    .section-divider {{
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 32px 0;
+    }}
+
+    /* ------------------------------------------------------------------ */
+    /*  Header / logo                                                       */
+    /* ------------------------------------------------------------------ */
+    .page-header {{
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      margin-bottom: 4px;
+    }}
+
+    .page-header img {{
+      height: 52px;
+      width: auto;
+      flex-shrink: 0;
+    }}
+
+    .page-header-text h1 {{
+      margin-bottom: 0;
+    }}
+  </style>
+</head>
+<body>
+
+<div class="page-header">
+{logo_img}  <div class="page-header-text">
+    <h1>SecretsDump Report</h1>
+  </div>
+</div>
+<p class="subtitle">
+  Source: <strong>{source_file}</strong> &nbsp;&bull;&nbsp;
+  Generated: <strong>{generated}</strong> &nbsp;&bull;&nbsp;
+  Total entries: <strong>{total}</strong>
+</p>
+
+<!-- ======================================================= Summary Cards -->
+<h2>Summary</h2>
+<div class="cards">
+  <div class="card green">
+    <div class="label">Enabled Users</div>
+    <div class="value">{enabled_users}</div>
+  </div>
+  <div class="card red">
+    <div class="label">Disabled Users</div>
+    <div class="value">{disabled_users}</div>
+  </div>
+  <div class="card blue">
+    <div class="label">Enabled Computers</div>
+    <div class="value">{enabled_computers}</div>
+  </div>
+  <div class="card warn">
+    <div class="label">Disabled Computers</div>
+    <div class="value">{disabled_computers}</div>
+  </div>
+  <div class="card warn">
+    <div class="label">Reused Passwords</div>
+    <div class="value">{reused_hash_count}</div>
+  </div>
+  <div class="card red">
+    <div class="label">Accounts w/ Reused PW</div>
+    <div class="value">{reused_account_count}</div>
+  </div>
+</div>
+
+<hr class="section-divider" />
+
+<!-- ======================================================= Password Reuse -->
+<h2>Password Reuse</h2>
+{reuse_section}
+
+<script>
+// ---------------------------------------------------------- collapsibles
+function toggleReuse(el) {{
+  const body    = el.nextElementSibling;
+  const chevron = el.querySelector('.chevron');
+  const open    = body.classList.toggle('open');
+  chevron.style.transform = open ? 'rotate(90deg)' : '';
+}}
+
+// ---------------------------------------------------------- copy hash
+function copyHash(event, btn, hash) {{
+  event.stopPropagation();
+  navigator.clipboard.writeText(hash).then(() => {{
+    btn.textContent = 'copied!';
+    btn.classList.add('copied');
+    setTimeout(() => {{
+      btn.textContent = 'copy hash';
+      btn.classList.remove('copied');
+    }}, 1500);
+  }});
+}}
+</script>
+</body>
+</html>
+"""
+
+
+def badge(text: str, cls: str) -> str:
+    return f'<span class="badge badge-{cls}">{text}</span>'
+
+
+def redact_hash(h: str) -> str:
+    return h[:4] + "*" * (len(h) - 8) + h[-4:]
+
+
+def build_reuse_section(analysis: dict, redacted: bool = False) -> str:
+    if not analysis["sorted_reused"]:
+        return "<p>No password reuse detected.</p>"
+
+    parts = []
+    for idx, (nt_hash, all_accs) in enumerate(analysis["sorted_reused"], 1):
+        enabled_accs = analysis["reused_enabled"].get(nt_hash, [])
+        total_count = len(all_accs)
+        enabled_count = len(enabled_accs)
+        display_hash = redact_hash(nt_hash) if redacted else nt_hash
+        copy_btn = "" if redacted else f'<button class="copy-btn" onclick="copyHash(event, this, \'{nt_hash}\')">copy hash</button>\n    '
+
+        parts.append(f"""
+<div class="reuse-group">
+  <div class="reuse-header" onclick="toggleReuse(this)">
+    <span class="group-num">{idx}</span>
+    {copy_btn}<span class="hash">{display_hash}</span>
+    <span class="counts">
+      {total_count} total &nbsp;|&nbsp; {enabled_count} enabled
+    </span>
+    <span class="chevron">&#9658;</span>
+  </div>
+  <div class="reuse-body">
+    <div class="table-wrap" style="border:none; border-radius:0; margin:0;">
+      <table>
+        <thead>
+          <tr>
+            <th>Domain</th>
+            <th>Username</th>
+            <th>Type</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+""")
+        for a in sorted(all_accs, key=lambda x: (not x["enabled"], x["username"])):
+            status_badge = badge(a["status"], "enabled" if a["enabled"] else "disabled")
+            type_badge = badge("Computer" if a["is_computer"] else "User",
+                               "computer" if a["is_computer"] else "user")
+            parts.append(f"""\
+          <tr>
+            <td>{a['domain']}</td>
+            <td>{a['username']}</td>
+            <td>{type_badge}</td>
+            <td>{status_badge}</td>
+          </tr>
+""")
+        parts.append("""\
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+""")
+    return "".join(parts)
+
+
+def write_html(accounts: list[dict], analysis: dict, source_file: str, out_path: str, redacted: bool = False) -> None:
+    reused_account_count = sum(len(v) for v in analysis["reused"].values())
+
+    logo_img = f'  <img src="{_LOGO_DATA_URI}" alt="Logo" />\n'
+
+    html = HTML_TEMPLATE.format(
+        source_file=Path(source_file).name,
+        generated=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        total=analysis["total"],
+        enabled_users=len(analysis["enabled_users"]),
+        disabled_users=len(analysis["disabled_users"]),
+        enabled_computers=len(analysis["enabled_computers"]),
+        disabled_computers=len(analysis["disabled_computers"]),
+        reused_hash_count=len(analysis["reused"]),
+        reused_account_count=reused_account_count,
+        reuse_section=build_reuse_section(analysis, redacted=redacted),
+        logo_img=logo_img,
+    )
+
+    with open(out_path, "w", encoding="utf-8") as fh:
+        fh.write(html)
+
+
+# --------------------------------------------------------------------------- #
+#  Entry point                                                                 #
+# --------------------------------------------------------------------------- #
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Analyse secretsdump output and produce an HTML report + CSV."
+    )
+    parser.add_argument("input", help="Path to the secretsdump output file")
+    parser.add_argument(
+        "-o", "--output",
+        default=None,
+        help="Base name for output files (default: input filename without extension)"
+    )
+    args = parser.parse_args()
+
+    input_path = args.input
+    base = args.output or Path(input_path).stem
+
+    html_path           = base + ".html"
+    html_redacted_path  = base + "_redacted.html"
+    csv_path            = base + ".csv"
+
+    print(f"[*] Parsing {input_path}...")
+    accounts = parse_file(input_path)
+
+    if not accounts:
+        print("[!] No accounts parsed. Check that the file contains secretsdump output with -user-status.", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"[*] Parsed {len(accounts)} accounts.")
+    analysis = analyse(accounts)
+
+    print(f"[*] Writing HTML report          -> {html_path}")
+    write_html(accounts, analysis, input_path, html_path)
+
+    print(f"[*] Writing HTML report (redacted) -> {html_redacted_path}")
+    write_html(accounts, analysis, input_path, html_redacted_path, redacted=True)
+
+    print(f"[*] Writing CSV                  -> {csv_path}")
+    write_csv(accounts, analysis, csv_path)
+
+    # Quick summary to stdout
+    print()
+    print("  Summary")
+    print(f"  {'Enabled users:':<28} {len(analysis['enabled_users'])}")
+    print(f"  {'Disabled users:':<28} {len(analysis['disabled_users'])}")
+    print(f"  {'Enabled computers:':<28} {len(analysis['enabled_computers'])}")
+    print(f"  {'Disabled computers:':<28} {len(analysis['disabled_computers'])}")
+    print(f"  {'Reused NT hashes:':<28} {len(analysis['reused'])}")
+    reused_acct = sum(len(v) for v in analysis['reused'].values())
+    print(f"  {'Accounts w/ reused pw:':<28} {reused_acct}")
+    print()
+
+
+if __name__ == "__main__":
+    main()
