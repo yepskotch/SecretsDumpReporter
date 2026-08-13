@@ -208,7 +208,7 @@ HTML_TEMPLATE = """\
     /* ------------------------------------------------------------------ */
     .cards {{
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
       gap: 14px;
       margin-bottom: 32px;
     }}
@@ -521,7 +521,7 @@ HTML_TEMPLATE = """\
     <div class="label">Reused PW Accounts</div>
     <div class="value">{reused_account_count}</div>
   </div>
-</div>
+{cracked_card}</div>
 
 <hr class="section-divider" />
 
@@ -703,6 +703,17 @@ def build_cracked_section(accounts: list[dict], cracked: dict[str, str], redacte
 
 def write_html(accounts: list[dict], analysis: dict, cracked: dict[str, str], source_file: str, out_path: str, redacted: bool = False) -> None:
     reused_account_count = sum(len(v) for v in analysis["reused"].values())
+    cracked_account_count = sum(1 for a in accounts if a["nt_hash"].lower() in cracked)
+
+    if cracked:
+        cracked_card = (
+            '  <div class="card red">\n'
+            '    <div class="label">Cracked Accounts</div>\n'
+            f'    <div class="value">{cracked_account_count}</div>\n'
+            '  </div>\n'
+        )
+    else:
+        cracked_card = ""
 
     logo_img = f'  <img src="{_LOGO_DATA_URI}" alt="Logo" />\n'
 
@@ -716,6 +727,7 @@ def write_html(accounts: list[dict], analysis: dict, cracked: dict[str, str], so
         disabled_computers=len(analysis["disabled_computers"]),
         reused_hash_count=len(analysis["reused"]),
         reused_account_count=reused_account_count,
+        cracked_card=cracked_card,
         reuse_section=build_reuse_section(analysis, cracked, redacted=redacted),
         cracked_section=build_cracked_section(accounts, cracked, redacted=redacted),
         logo_img=logo_img,
