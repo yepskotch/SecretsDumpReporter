@@ -8,9 +8,11 @@ Parses the output of [Impacket](https://github.com/fortra/impacket)'s `secretsdu
 
 - **Account summary** — enabled/disabled counts for users and computers
 - **Password reuse analysis** — groups accounts sharing the same NT hash, with enabled accounts highlighted
+- **Blank password detection** — flags accounts with no password set
+- **LM hash detection** — flags accounts with LM hashing enabled (trivially crackable)
 - **Potfile integration** — match a hashcat `.potfile` to surface cracked passwords in the report
 - **Two HTML reports** — full report with clickable hashes/passwords and a redacted version safe to share
-- **CSV export** — full account list with reuse group numbers and cracked passwords for filtering in Excel/similar
+- **CSV export** — full account list with reuse group, cracked password, blank password and LM hash flags
 - **Self-contained output** — the HTML report embeds all assets (logo, CSS, JS); no internet connection required to view it
 - No external Python dependencies — stdlib only
 

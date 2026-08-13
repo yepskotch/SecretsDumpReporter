@@ -25,6 +25,9 @@ _LOGO_DATA_URI = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHgAAAB4CAYAAAA5
 #  Parsing                                                                     #
 # --------------------------------------------------------------------------- #
 
+BLANK_NT_HASH = "31d6cfe0d16ae931b73c59d7e0c089c0"
+LM_DISABLED   = "aad3b435b51404eeaad3b435b51404ee"
+
 LINE_RE = re.compile(
     r"^(?P<domain>[^\\]+)\\(?P<username>[^:]+)"
     r":(?P<rid>\d+)"
@@ -90,8 +93,10 @@ def analyse(accounts: list[dict]) -> dict:
         hash_to_accounts[a["nt_hash"]].append(a)
 
     # A hash is "reused" only when more than one account shares it
+    # Exclude the blank password hash — it has its own dedicated section
     reused: dict[str, list[dict]] = {
-        h: accs for h, accs in hash_to_accounts.items() if len(accs) > 1
+        h: accs for h, accs in hash_to_accounts.items()
+        if len(accs) > 1 and h.lower() != BLANK_NT_HASH
     }
 
     # For each reused hash, gather the enabled accounts
@@ -105,6 +110,12 @@ def analyse(accounts: list[dict]) -> dict:
         reused.items(), key=lambda kv: len(kv[1]), reverse=True
     )
 
+    # Blank passwords (NT hash is the well-known empty-password hash)
+    blank_accounts = [a for a in accounts if a["nt_hash"].lower() == BLANK_NT_HASH]
+
+    # LM hashes present (LM field is not the disabled placeholder)
+    lm_accounts = [a for a in accounts if a["lm_hash"].lower() != LM_DISABLED]
+
     return {
         "enabled_users": enabled_users,
         "disabled_users": disabled_users,
@@ -113,6 +124,8 @@ def analyse(accounts: list[dict]) -> dict:
         "reused": reused,
         "reused_enabled": reused_enabled,
         "sorted_reused": sorted_reused,
+        "blank_accounts": blank_accounts,
+        "lm_accounts": lm_accounts,
         "total": len(accounts),
     }
 
@@ -130,6 +143,7 @@ def write_csv(accounts: list[dict], analysis: dict, cracked: dict[str, str], out
     fieldnames = [
         "domain", "username", "rid", "nt_hash",
         "account_type", "status", "password_reuse_group", "cracked_password",
+        "blank_password", "lm_hash_present",
     ]
     with open(out_path, "w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=fieldnames)
@@ -144,6 +158,8 @@ def write_csv(accounts: list[dict], analysis: dict, cracked: dict[str, str], out
                 "status": a["status"],
                 "password_reuse_group": hash_to_group.get(a["nt_hash"], ""),
                 "cracked_password": cracked.get(a["nt_hash"].lower(), ""),
+                "blank_password": "Yes" if a["nt_hash"].lower() == BLANK_NT_HASH else "",
+                "lm_hash_present": "Yes" if a["lm_hash"].lower() != LM_DISABLED else "",
             })
 
 
@@ -209,7 +225,14 @@ HTML_TEMPLATE = """\
     .cards {{
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
-      gap: 14px;
+      gap: 12px;
+      margin-bottom: 8px;
+    }}
+
+    .cards-findings {{
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+      gap: 12px;
       margin-bottom: 32px;
     }}
 
@@ -513,6 +536,8 @@ HTML_TEMPLATE = """\
     <div class="label">Disabled Computers</div>
     <div class="value">{disabled_computers}</div>
   </div>
+</div>
+<div class="cards-findings">
   <div class="card warn">
     <div class="label">Reused Passwords</div>
     <div class="value">{reused_hash_count}</div>
@@ -520,6 +545,14 @@ HTML_TEMPLATE = """\
   <div class="card red">
     <div class="label">Reused PW Accounts</div>
     <div class="value">{reused_account_count}</div>
+  </div>
+  <div class="card red">
+    <div class="label">Blank Passwords</div>
+    <div class="value">{blank_count}</div>
+  </div>
+  <div class="card red">
+    <div class="label">LM Hashes</div>
+    <div class="value">{lm_count}</div>
   </div>
 {cracked_card}</div>
 
@@ -530,6 +563,10 @@ HTML_TEMPLATE = """\
 {reuse_section}
 
 {cracked_section}
+
+{blank_section}
+
+{lm_section}
 <script>
 // ---------------------------------------------------------- collapsibles
 function toggleReuse(el) {{
@@ -553,11 +590,11 @@ function copyHash(event, el, text) {{
   }});
 }}
 // ---------------------------------------------------------- toggle disabled
-function toggleDisabled() {{
-  const btn  = document.getElementById('cracked-toggle');
+function toggleDisabled(tableId, btnId) {{
+  const btn  = document.getElementById(btnId);
   const hide = btn.classList.toggle('active');
   btn.textContent = hide ? 'Show Disabled' : 'Hide Disabled';
-  document.querySelectorAll('#cracked-table tbody tr[data-disabled="1"]').forEach(r => {{
+  document.querySelectorAll('#' + tableId + ' tbody tr[data-disabled="1"]').forEach(r => {{
     r.style.display = hide ? 'none' : '';
   }});
 }}
@@ -680,7 +717,7 @@ def build_cracked_section(accounts: list[dict], cracked: dict[str, str], redacte
 <!-- ======================================================= Cracked Passwords -->
 <div class="section-heading">
   <h2>Cracked Passwords</h2>
-  <button class="toggle-btn" id="cracked-toggle" onclick="toggleDisabled()">Hide Disabled</button>
+  <button class="toggle-btn" id="cracked-toggle" onclick="toggleDisabled('cracked-table', 'cracked-toggle')">Hide Disabled</button>
 </div>
 <div class="table-wrap">
   <table id="cracked-table">
@@ -692,6 +729,106 @@ def build_cracked_section(accounts: list[dict], cracked: dict[str, str], redacte
         <th>Status</th>
         <th>NT Hash</th>
         <th>{pw_header}</th>
+      </tr>
+    </thead>
+    <tbody>
+{"".join(rows)}    </tbody>
+  </table>
+</div>
+"""
+
+
+def build_blank_section(analysis: dict) -> str:
+    """Build the 'Blank Passwords' section — same content for full and redacted reports."""
+    accounts = analysis["blank_accounts"]
+    if not accounts:
+        return ""
+
+    rows = []
+    for a in sorted(accounts, key=lambda x: (not x["enabled"], x["username"])):
+        status_badge = badge(a["status"], "enabled" if a["enabled"] else "disabled")
+        type_badge   = badge("Computer" if a["is_computer"] else "User",
+                             "computer" if a["is_computer"] else "user")
+        rows.append(f"""\
+      <tr data-disabled="{'1' if not a['enabled'] else '0'}">
+        <td>{a['domain']}</td>
+        <td>{a['username']}</td>
+        <td>{type_badge}</td>
+        <td>{status_badge}</td>
+      </tr>
+""")
+
+    return f"""\
+<hr class="section-divider" />
+
+<!-- ======================================================= Blank Passwords -->
+<div class="section-heading">
+  <h2>Blank Passwords</h2>
+  <button class="toggle-btn" id="blank-toggle" onclick="toggleDisabled('blank-table', 'blank-toggle')">Hide Disabled</button>
+</div>
+<div class="table-wrap">
+  <table id="blank-table">
+    <thead>
+      <tr>
+        <th>Domain</th>
+        <th>Username</th>
+        <th>Type</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+{"".join(rows)}    </tbody>
+  </table>
+</div>
+"""
+
+
+def build_lm_section(analysis: dict, redacted: bool = False) -> str:
+    """Build the 'LM Hashes' section."""
+    accounts = analysis["lm_accounts"]
+    if not accounts:
+        return ""
+
+    rows = []
+    for a in sorted(accounts, key=lambda x: (not x["enabled"], x["username"])):
+        status_badge = badge(a["status"], "enabled" if a["enabled"] else "disabled")
+        type_badge   = badge("Computer" if a["is_computer"] else "User",
+                             "computer" if a["is_computer"] else "user")
+        if redacted:
+            lm_cell = f'<span class="mono">{redact_hash(a["lm_hash"])}</span>'
+        else:
+            lm_cell = f'<span class="mono cracked-pw copyable" title="Click to copy" onclick="copyHash(event, this, \'{a["lm_hash"]}\')">{a["lm_hash"]}</span>'
+        rows.append(f"""\
+      <tr data-disabled="{'1' if not a['enabled'] else '0'}">
+        <td>{a['domain']}</td>
+        <td>{a['username']}</td>
+        <td>{type_badge}</td>
+        <td>{status_badge}</td>
+        <td>{lm_cell}</td>
+      </tr>
+""")
+
+    lm_header = "LM Hash" if not redacted else "LM Hash (Redacted)"
+    return f"""\
+<hr class="section-divider" />
+
+<!-- ======================================================= LM Hashes -->
+<div class="section-heading">
+  <h2>LM Hashes Present</h2>
+  <button class="toggle-btn" id="lm-toggle" onclick="toggleDisabled('lm-table', 'lm-toggle')">Hide Disabled</button>
+</div>
+<p style="font-size:12px; color: var(--muted); margin-bottom: 12px;">
+  These accounts have LM hashing enabled. LM hashes are trivially crackable (max 14 chars, case-insensitive, split into two 7-char halves).
+</p>
+<div class="table-wrap">
+  <table id="lm-table">
+    <thead>
+      <tr>
+        <th>Domain</th>
+        <th>Username</th>
+        <th>Type</th>
+        <th>Status</th>
+        <th>{lm_header}</th>
       </tr>
     </thead>
     <tbody>
@@ -730,6 +867,10 @@ def write_html(accounts: list[dict], analysis: dict, cracked: dict[str, str], so
         cracked_card=cracked_card,
         reuse_section=build_reuse_section(analysis, cracked, redacted=redacted),
         cracked_section=build_cracked_section(accounts, cracked, redacted=redacted),
+        blank_section=build_blank_section(analysis),
+        lm_section=build_lm_section(analysis, redacted=redacted),
+        blank_count=len(analysis["blank_accounts"]),
+        lm_count=len(analysis["lm_accounts"]),
         logo_img=logo_img,
     )
 
@@ -804,6 +945,8 @@ def main() -> None:
     if cracked:
         matched = sum(1 for a in accounts if a["nt_hash"].lower() in cracked)
         print(f"  {'Cracked accounts:':<28} {matched}")
+    print(f"  {'Blank passwords:':<28} {len(analysis['blank_accounts'])}")
+    print(f"  {'LM hashes present:':<28} {len(analysis['lm_accounts'])}")
     print()
 
 
