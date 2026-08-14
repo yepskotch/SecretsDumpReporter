@@ -560,7 +560,7 @@ HTML_TEMPLATE = """\
 <hr class="section-divider" />
 
 <!-- ======================================================= Password Reuse -->
-<h2>Password Reuse</h2>
+<h2>Password Reuse{reuse_cracked_suffix}</h2>
 {reuse_section}
 
 {cracked_section}
@@ -849,6 +849,12 @@ def write_html(accounts: list[dict], analysis: dict, cracked: dict[str, str], so
         if a["nt_hash"].lower() in cracked and a["nt_hash"].lower() != BLANK_NT_HASH
     )
 
+    # Number of reused hashes that have been cracked
+    cracked_reuse_count = sum(
+        1 for h, _ in analysis["sorted_reused"] if h.lower() in cracked
+    )
+    reuse_cracked_suffix = f' <span style="font-size:0.85em; color:var(--warn);">({cracked_reuse_count} Cracked)</span>' if cracked_reuse_count else ""
+
     if cracked:
         cracked_card = (
             '  <div class="card red">\n'
@@ -873,6 +879,7 @@ def write_html(accounts: list[dict], analysis: dict, cracked: dict[str, str], so
         reused_account_count=reused_account_count,
         cracked_card=cracked_card,
         reuse_section=build_reuse_section(analysis, cracked, redacted=redacted),
+        reuse_cracked_suffix=reuse_cracked_suffix,
         cracked_section=build_cracked_section(accounts, cracked, redacted=redacted),
         blank_section=build_blank_section(analysis),
         lm_section=build_lm_section(analysis, redacted=redacted),
