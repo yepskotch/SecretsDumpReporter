@@ -487,11 +487,32 @@ HTML_TEMPLATE = """\
     /* ------------------------------------------------------------------ */
     /*  Pagination                                                          */
     /* ------------------------------------------------------------------ */
-    .pagination-bar {{
+    .table-controls {{
       display: flex;
       align-items: center;
       gap: 8px;
       margin-bottom: 6px;
+      flex-wrap: wrap;
+    }}
+
+    .filter-input, .filter-select {{
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      font-size: 12px;
+      padding: 3px 8px;
+      outline: none;
+    }}
+
+    .filter-input {{ min-width: 180px; }}
+    .filter-input:focus, .filter-select:focus {{ border-color: var(--accent); }}
+
+    .pagination-bar {{
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: auto;
       font-size: 12px;
       color: var(--muted);
     }}
@@ -644,9 +665,34 @@ function toggleDisabled(tableId, btnId) {{
   btn.textContent = hide ? 'Show Disabled' : 'Hide Disabled';
   document.querySelectorAll('#' + tableId + ' tbody tr[data-disabled="1"]').forEach(r => {{
     r._hiddenByToggle = hide;
-    r.style.display = hide ? 'none' : '';
   }});
+  applyVisibility(tableId);
   paginate(tableId);
+}}
+
+// ---------------------------------------------------------- filtering
+function filterTable(tableId) {{
+  const search  = (document.getElementById(tableId + '-search')  || {{}}).value || '';
+  const typeVal = (document.getElementById(tableId + '-type')    || {{}}).value || '';
+  const needle  = search.trim().toLowerCase();
+  const tbody   = document.querySelector('#' + tableId + ' tbody');
+  Array.from(tbody.rows).forEach(r => {{
+    const text    = r.textContent.toLowerCase();
+    const typeCell = r.querySelector('td:nth-child(3)');
+    const matchText = !needle || text.includes(needle);
+    const matchType = !typeVal || (typeCell && typeCell.textContent.trim().toUpperCase() === typeVal.toUpperCase());
+    r._hiddenByFilter = !(matchText && matchType);
+  }});
+  applyVisibility(tableId);
+  _pageState[tableId] = {{ page: 1 }};
+  paginate(tableId);
+}}
+
+function applyVisibility(tableId) {{
+  const tbody = document.querySelector('#' + tableId + ' tbody');
+  Array.from(tbody.rows).forEach(r => {{
+    r.style.display = (r._hiddenByToggle || r._hiddenByFilter) ? 'none' : '';
+  }});
 }}
 
 // ---------------------------------------------------------- pagination
@@ -657,15 +703,19 @@ function paginate(tableId) {{
   const sizeEl  = document.getElementById(tableId + '-size');
   const pageSize = sizeEl ? (sizeEl.value === 'all' ? Infinity : parseInt(sizeEl.value)) : 10;
   const tbody   = document.querySelector('#' + tableId + ' tbody');
-  const rows    = Array.from(tbody.rows).filter(r => !r._hiddenByToggle);
+  const rows    = Array.from(tbody.rows).filter(r => !r._hiddenByToggle && !r._hiddenByFilter);
   const total   = rows.length;
   const pages   = pageSize === Infinity ? 1 : Math.max(1, Math.ceil(total / pageSize));
 
   if (state.page > pages) state.page = pages;
 
+  // hide all first, then show only current page
+  Array.from(tbody.rows).forEach(r => {{
+    if (!r._hiddenByToggle && !r._hiddenByFilter) r.style.display = 'none';
+  }});
   rows.forEach((r, i) => {{
     const inPage = pageSize === Infinity || (i >= (state.page - 1) * pageSize && i < state.page * pageSize);
-    r.style.display = inPage ? '' : 'none';
+    if (inPage) r.style.display = '';
   }});
 
   // Update controls
@@ -713,19 +763,27 @@ def badge(text: str, cls: str) -> str:
 
 def pagination_bar(table_id: str) -> str:
     return f"""\
-<div class="pagination-bar">
-  <span>Show</span>
-  <select id="{table_id}-size" onchange="changePageSize('{table_id}')">
-    <option value="10">10</option>
-    <option value="25">25</option>
-    <option value="50">50</option>
-    <option value="100">100</option>
-    <option value="all">All</option>
+<div class="table-controls">
+  <input class="filter-input" id="{table_id}-search" type="text" placeholder="Search username, domain&#8230;" oninput="filterTable('{table_id}')">
+  <select class="filter-select" id="{table_id}-type" onchange="filterTable('{table_id}')">
+    <option value="">All types</option>
+    <option value="USER">User</option>
+    <option value="COMPUTER">Computer</option>
   </select>
-  <span>rows</span>
-  <button class="page-btn" id="{table_id}-prev" onclick="changePage('{table_id}', -1)">&#8592;</button>
-  <span class="page-info" id="{table_id}-info"></span>
-  <button class="page-btn" id="{table_id}-next" onclick="changePage('{table_id}', 1)">&#8594;</button>
+  <div class="pagination-bar">
+    <span>Show</span>
+    <select id="{table_id}-size" onchange="changePageSize('{table_id}')">
+      <option value="10">10</option>
+      <option value="25">25</option>
+      <option value="50">50</option>
+      <option value="100">100</option>
+      <option value="all">All</option>
+    </select>
+    <span>rows</span>
+    <button class="page-btn" id="{table_id}-prev" onclick="changePage('{table_id}', -1)">&#8592;</button>
+    <span class="page-info" id="{table_id}-info"></span>
+    <button class="page-btn" id="{table_id}-next" onclick="changePage('{table_id}', 1)">&#8594;</button>
+  </div>
 </div>"""
 
 
