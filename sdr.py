@@ -684,7 +684,10 @@ def build_reuse_section(analysis: dict, cracked: dict[str, str], redacted: bool 
 
 def build_cracked_section(accounts: list[dict], cracked: dict[str, str], redacted: bool = False) -> str:
     """Build the 'Cracked Passwords' section listing all accounts with a cracked hash."""
-    cracked_accounts = [a for a in accounts if a["nt_hash"].lower() in cracked]
+    cracked_accounts = [
+        a for a in accounts
+        if a["nt_hash"].lower() in cracked and a["nt_hash"].lower() != BLANK_NT_HASH
+    ]
     if not cracked_accounts:
         return ""
 
@@ -841,7 +844,10 @@ def build_lm_section(analysis: dict, redacted: bool = False) -> str:
 
 def write_html(accounts: list[dict], analysis: dict, cracked: dict[str, str], source_file: str, out_path: str, redacted: bool = False) -> None:
     reused_account_count = sum(len(v) for v in analysis["reused"].values())
-    cracked_account_count = sum(1 for a in accounts if a["nt_hash"].lower() in cracked)
+    cracked_account_count = sum(
+        1 for a in accounts
+        if a["nt_hash"].lower() in cracked and a["nt_hash"].lower() != BLANK_NT_HASH
+    )
 
     if cracked:
         cracked_card = (
@@ -944,7 +950,10 @@ def main() -> None:
     reused_acct = sum(len(v) for v in analysis['reused'].values())
     print(f"  {'Accounts w/ reused pw:':<28} {reused_acct}")
     if cracked:
-        matched = sum(1 for a in accounts if a["nt_hash"].lower() in cracked)
+        matched = sum(
+            1 for a in accounts
+            if a["nt_hash"].lower() in cracked and a["nt_hash"].lower() != BLANK_NT_HASH
+        )
         print(f"  {'Cracked accounts:':<28} {matched}")
     print(f"  {'Blank passwords:':<28} {len(analysis['blank_accounts'])}")
     print(f"  {'LM hashes present:':<28} {len(analysis['lm_accounts'])}")
