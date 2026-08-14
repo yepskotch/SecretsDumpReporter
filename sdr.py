@@ -761,7 +761,7 @@ def badge(text: str, cls: str) -> str:
     return f'<span class="badge badge-{cls}">{text}</span>'
 
 
-def pagination_bar(table_id: str) -> str:
+def pagination_bar(table_id: str, toggle_id: str) -> str:
     return f"""\
 <div class="table-controls">
   <input class="filter-input" id="{table_id}-search" type="text" placeholder="Search username, domain&#8230;" oninput="filterTable('{table_id}')">
@@ -770,6 +770,7 @@ def pagination_bar(table_id: str) -> str:
     <option value="USER">User</option>
     <option value="COMPUTER">Computer</option>
   </select>
+  <button class="toggle-btn" id="{toggle_id}" onclick="toggleDisabled('{table_id}', '{toggle_id}')">Hide Disabled</button>
   <div class="pagination-bar">
     <span>Show</span>
     <select id="{table_id}-size" onchange="changePageSize('{table_id}')">
@@ -899,9 +900,8 @@ def build_cracked_section(accounts: list[dict], cracked: dict[str, str], redacte
 <!-- ======================================================= Cracked Passwords -->
 <div class="section-heading">
   <h2>Cracked Passwords</h2>
-  <button class="toggle-btn" id="cracked-toggle" onclick="toggleDisabled('cracked-table', 'cracked-toggle')">Hide Disabled</button>
 </div>
-{pagination_bar('cracked-table')}
+{pagination_bar('cracked-table', 'cracked-toggle')}
 <div class="table-wrap">
   <table id="cracked-table">
     <thead>
@@ -947,9 +947,8 @@ def build_blank_section(analysis: dict) -> str:
 <!-- ======================================================= Blank Passwords -->
 <div class="section-heading">
   <h2>Blank Passwords</h2>
-  <button class="toggle-btn" id="blank-toggle" onclick="toggleDisabled('blank-table', 'blank-toggle')">Hide Disabled</button>
 </div>
-{pagination_bar('blank-table')}
+{pagination_bar('blank-table', 'blank-toggle')}
 <div class="table-wrap">
   <table id="blank-table">
     <thead>
@@ -999,12 +998,11 @@ def build_lm_section(analysis: dict, redacted: bool = False) -> str:
 <!-- ======================================================= LM Hashes -->
 <div class="section-heading">
   <h2>LM Hashes Present</h2>
-  <button class="toggle-btn" id="lm-toggle" onclick="toggleDisabled('lm-table', 'lm-toggle')">Hide Disabled</button>
 </div>
 <p style="font-size:12px; color: var(--muted); margin-bottom: 12px;">
   These accounts have LM hashing enabled. LM hashes are trivially crackable (max 14 chars, case-insensitive, split into two 7-char halves).
 </p>
-{pagination_bar('lm-table')}
+{pagination_bar('lm-table', 'lm-toggle')}
 <div class="table-wrap">
   <table id="lm-table">
     <thead>
