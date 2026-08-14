@@ -485,6 +485,53 @@ HTML_TEMPLATE = """\
     }}
 
     /* ------------------------------------------------------------------ */
+    /*  Pagination                                                          */
+    /* ------------------------------------------------------------------ */
+    .pagination-bar {{
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+      font-size: 12px;
+      color: var(--muted);
+    }}
+
+    .pagination-bar select {{
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 12px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      outline: none;
+    }}
+
+    .pagination-bar select:focus {{ border-color: var(--accent); }}
+
+    .page-btn {{
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      cursor: pointer;
+      font-size: 12px;
+      padding: 2px 10px;
+      transition: border-color .15s, color .15s;
+    }}
+
+    .page-btn:hover:not(:disabled) {{
+      border-color: var(--accent);
+      color: var(--accent);
+    }}
+
+    .page-btn:disabled {{
+      opacity: 0.35;
+      cursor: default;
+    }}
+
+    .page-info {{ margin: 0 4px; }}
+
+    /* ------------------------------------------------------------------ */
     /*  Header / logo                                                       */
     /* ------------------------------------------------------------------ */
     .page-header {{
@@ -596,9 +643,64 @@ function toggleDisabled(tableId, btnId) {{
   const hide = btn.classList.toggle('active');
   btn.textContent = hide ? 'Show Disabled' : 'Hide Disabled';
   document.querySelectorAll('#' + tableId + ' tbody tr[data-disabled="1"]').forEach(r => {{
+    r._hiddenByToggle = hide;
     r.style.display = hide ? 'none' : '';
   }});
+  paginate(tableId);
 }}
+
+// ---------------------------------------------------------- pagination
+const _pageState = {{}};
+
+function paginate(tableId) {{
+  const state   = _pageState[tableId] || (_pageState[tableId] = {{ page: 1 }});
+  const sizeEl  = document.getElementById(tableId + '-size');
+  const pageSize = sizeEl ? (sizeEl.value === 'all' ? Infinity : parseInt(sizeEl.value)) : 10;
+  const tbody   = document.querySelector('#' + tableId + ' tbody');
+  const rows    = Array.from(tbody.rows).filter(r => !r._hiddenByToggle);
+  const total   = rows.length;
+  const pages   = pageSize === Infinity ? 1 : Math.max(1, Math.ceil(total / pageSize));
+
+  if (state.page > pages) state.page = pages;
+
+  rows.forEach((r, i) => {{
+    const inPage = pageSize === Infinity || (i >= (state.page - 1) * pageSize && i < state.page * pageSize);
+    r.style.display = inPage ? '' : 'none';
+  }});
+
+  // Update controls
+  const info   = document.getElementById(tableId + '-info');
+  const prev   = document.getElementById(tableId + '-prev');
+  const next   = document.getElementById(tableId + '-next');
+  if (info) {{
+    if (pageSize === Infinity || pages === 1) {{
+      info.textContent = total + ' rows';
+    }} else {{
+      const from = Math.min((state.page - 1) * pageSize + 1, total);
+      const to   = Math.min(state.page * pageSize, total);
+      info.textContent = from + '–' + to + ' of ' + total;
+    }}
+  }}
+  if (prev) prev.disabled = state.page <= 1;
+  if (next) next.disabled = state.page >= pages;
+}}
+
+function changePage(tableId, delta) {{
+  const state = _pageState[tableId] || (_pageState[tableId] = {{ page: 1 }});
+  state.page += delta;
+  paginate(tableId);
+}}
+
+function changePageSize(tableId) {{
+  _pageState[tableId] = {{ page: 1 }};
+  paginate(tableId);
+}}
+
+document.addEventListener('DOMContentLoaded', () => {{
+  ['cracked-table', 'blank-table', 'lm-table'].forEach(id => {{
+    if (document.getElementById(id)) paginate(id);
+  }});
+}});
 </script>
 </body>
 </html>
@@ -607,6 +709,24 @@ function toggleDisabled(tableId, btnId) {{
 
 def badge(text: str, cls: str) -> str:
     return f'<span class="badge badge-{cls}">{text}</span>'
+
+
+def pagination_bar(table_id: str) -> str:
+    return f"""\
+<div class="pagination-bar">
+  <span>Show</span>
+  <select id="{table_id}-size" onchange="changePageSize('{table_id}')">
+    <option value="10">10</option>
+    <option value="25">25</option>
+    <option value="50">50</option>
+    <option value="100">100</option>
+    <option value="all">All</option>
+  </select>
+  <span>rows</span>
+  <button class="page-btn" id="{table_id}-prev" onclick="changePage('{table_id}', -1)">&#8592;</button>
+  <span class="page-info" id="{table_id}-info"></span>
+  <button class="page-btn" id="{table_id}-next" onclick="changePage('{table_id}', 1)">&#8594;</button>
+</div>"""
 
 
 def redact_hash(h: str) -> str:
@@ -723,6 +843,7 @@ def build_cracked_section(accounts: list[dict], cracked: dict[str, str], redacte
   <h2>Cracked Passwords</h2>
   <button class="toggle-btn" id="cracked-toggle" onclick="toggleDisabled('cracked-table', 'cracked-toggle')">Hide Disabled</button>
 </div>
+{pagination_bar('cracked-table')}
 <div class="table-wrap">
   <table id="cracked-table">
     <thead>
@@ -770,6 +891,7 @@ def build_blank_section(analysis: dict) -> str:
   <h2>Blank Passwords</h2>
   <button class="toggle-btn" id="blank-toggle" onclick="toggleDisabled('blank-table', 'blank-toggle')">Hide Disabled</button>
 </div>
+{pagination_bar('blank-table')}
 <div class="table-wrap">
   <table id="blank-table">
     <thead>
@@ -824,6 +946,7 @@ def build_lm_section(analysis: dict, redacted: bool = False) -> str:
 <p style="font-size:12px; color: var(--muted); margin-bottom: 12px;">
   These accounts have LM hashing enabled. LM hashes are trivially crackable (max 14 chars, case-insensitive, split into two 7-char halves).
 </p>
+{pagination_bar('lm-table')}
 <div class="table-wrap">
   <table id="lm-table">
     <thead>
