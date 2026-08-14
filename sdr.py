@@ -29,7 +29,7 @@ BLANK_NT_HASH = "31d6cfe0d16ae931b73c59d7e0c089c0"
 LM_DISABLED   = "aad3b435b51404eeaad3b435b51404ee"
 
 LINE_RE = re.compile(
-    r"^(?P<domain>[^\\]+)\\(?P<username>[^:]+)"
+    r"^(?:(?P<domain>[^\\]+)\\)?(?P<username>[^:]+)"
     r":(?P<rid>\d+)"
     r":(?P<lm_hash>[0-9a-fA-F]+)"
     r":(?P<nt_hash>[0-9a-fA-F]+)"
@@ -55,6 +55,7 @@ def parse_file(path: str) -> list[dict]:
             if not m:
                 continue
             d = m.groupdict()
+            d["domain"] = d["domain"] or ""
             d["is_computer"] = is_computer(d["username"])
             d["enabled"] = d["status"].lower() == "enabled"
             d["lineno"] = lineno
