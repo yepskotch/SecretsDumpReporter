@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "secretsdump-reporter"
-version = "1.0.7"
+version = "1.2.0"
 description = "Parse secretsdump output and generate HTML reports and CSV with password reuse analysis"
 readme = "README.md"
 requires-python = ">=3.10"

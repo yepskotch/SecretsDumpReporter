@@ -571,6 +571,100 @@ HTML_TEMPLATE = """\
     .page-header-text h1 {{
       margin-bottom: 0;
     }}
+
+    /* ------------------------------------------------------------------ */
+    /*  Tabs                                                                */
+    /* ------------------------------------------------------------------ */
+    .tab-bar {{
+      display: flex;
+      gap: 2px;
+      border-bottom: 2px solid var(--border);
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+    }}
+
+    .tab-btn {{
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      color: var(--muted);
+      cursor: pointer;
+      font-family: var(--font);
+      font-size: 13px;
+      padding: 8px 16px;
+      transition: color .15s, border-color .15s;
+      white-space: nowrap;
+    }}
+
+    .tab-btn:hover {{ color: var(--text); }}
+
+    .tab-btn.active {{
+      color: var(--text-head);
+      border-bottom-color: var(--accent);
+    }}
+
+    .tab-btn.empty {{
+      color: #444d56;
+      cursor: default;
+    }}
+
+    .tab-btn.empty:hover {{ color: #444d56; }}
+
+    .tab-pane {{ display: none; }}
+    .tab-pane.active {{ display: block; }}
+
+    /* ------------------------------------------------------------------ */
+    /*  Charts                                                              */
+    /* ------------------------------------------------------------------ */
+    .charts-row {{
+      display: flex;
+      gap: 24px;
+      flex-wrap: wrap;
+      margin-top: 24px;
+    }}
+
+    .chart-card {{
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      flex: 1;
+      min-width: 280px;
+    }}
+
+    .chart-card h3 {{
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--muted);
+      margin-bottom: 16px;
+    }}
+
+    .chart-card canvas {{
+      display: block;
+      margin: 0 auto;
+    }}
+
+    .chart-legend {{
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 14px;
+      font-size: 12px;
+    }}
+
+    .legend-item {{
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }}
+
+    .legend-dot {{
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }}
   </style>
 </head>
 <body>
@@ -586,8 +680,10 @@ HTML_TEMPLATE = """\
   Total entries: <strong>{total}</strong>
 </p>
 
-<!-- ======================================================= Summary Cards -->
-<h2>Summary</h2>
+{tab_bar}
+
+<!-- ======================================================= Summary -->
+<div class="tab-pane active" id="pane-summary">
 <div class="cards">
   <div class="card green">
     <div class="label">Enabled Users</div>
@@ -624,25 +720,123 @@ HTML_TEMPLATE = """\
     <div class="value">{lm_count}</div>
   </div>
 {cracked_card}</div>
-
-<hr class="section-divider" />
+{charts_section}
+</div>
 
 <!-- ======================================================= Password Reuse -->
-<h2>Password Reuse{reuse_cracked_suffix}</h2>
+<div class="tab-pane" id="pane-reuse">
 {reuse_section}
+</div>
 
+<!-- ======================================================= Cracked Passwords -->
+<div class="tab-pane" id="pane-cracked">
 {cracked_section}
+</div>
 
+<!-- ======================================================= Blank Passwords -->
+<div class="tab-pane" id="pane-blank">
 {blank_section}
+</div>
 
+<!-- ======================================================= LM Hashes -->
+<div class="tab-pane" id="pane-lm">
 {lm_section}
+</div>
+
 <script>
+// ---------------------------------------------------------- tabs
+function switchTab(id) {{
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  const pane = document.getElementById('pane-' + id);
+  const btn  = document.getElementById('tab-' + id);
+  if (pane) pane.classList.add('active');
+  if (btn)  btn.classList.add('active');
+  history.replaceState(null, '', '#' + id);
+  ['cracked-table', 'blank-table', 'lm-table'].forEach(tid => {{
+    const t = document.getElementById(tid);
+    if (t && t.closest('.tab-pane') === pane && !_pageState[tid]) paginate(tid);
+  }});
+}}
+
+window.addEventListener('hashchange', () => {{
+  const id = location.hash.replace('#', '') || 'summary';
+  const btn = document.getElementById('tab-' + id);
+  if (btn && !btn.classList.contains('empty')) switchTab(id);
+}});
+
 // ---------------------------------------------------------- collapsibles
 function toggleReuse(el) {{
   const body    = el.nextElementSibling;
   const chevron = el.querySelector('.chevron');
   const open    = body.classList.toggle('open');
   chevron.style.transform = open ? 'rotate(90deg)' : '';
+}}
+
+// ---------------------------------------------------------- charts
+function drawPie(canvasId, data) {{
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const cx = canvas.width / 2, cy = canvas.height / 2;
+  const r  = Math.min(cx, cy) - 8;
+  const total = data.reduce((s, d) => s + d.value, 0);
+  if (total === 0) return;
+  let angle = -Math.PI / 2;
+  data.forEach(d => {{
+    const slice = (d.value / total) * 2 * Math.PI;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, r, angle, angle + slice);
+    ctx.closePath();
+    ctx.fillStyle = d.color;
+    ctx.fill();
+    angle += slice;
+  }});
+}}
+
+function drawBar(canvasId, data) {{
+  const canvas = document.getElementById(canvasId);
+  if (!canvas || !data.length) return;
+  const ctx   = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const padL = 44, padR = 12, padT = 16, padB = 28;
+  const chartW = W - padL - padR;
+  const chartH = H - padT - padB;
+  const maxVal = Math.max(...data.map(d => d.value));
+  const yMax   = Math.max(maxVal, 3); // minimum y range of 3 to avoid cramped labels
+  const barW   = Math.max(4, Math.floor(chartW / data.length) - 3);
+
+  ctx.clearRect(0, 0, W, H);
+
+  // integer ticks — show at most 5, always include 0 and yMax
+  const tickCount = Math.min(yMax, 5);
+  const tickVals  = new Set([0]);
+  for (let i = 1; i <= tickCount; i++) tickVals.add(Math.round(yMax * i / tickCount));
+
+  tickVals.forEach(v => {{
+    const y = padT + chartH * (1 - v / yMax);
+    ctx.strokeStyle = '#30363d';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
+    ctx.fillStyle = '#8b949e';
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText(v, padL - 6, y + 3);
+  }});
+
+  // bars
+  data.forEach((d, i) => {{
+    const x  = padL + i * (chartW / data.length);
+    const bh = (d.value / yMax) * chartH;
+    const y  = padT + chartH - bh;
+    ctx.fillStyle = '#58a6ff';
+    ctx.fillRect(x + 1, y, barW, bh);
+    ctx.fillStyle = '#8b949e';
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(d.label, x + barW / 2 + 1, H - padB + 14);
+  }});
 }}
 
 // ---------------------------------------------------------- copy hash
@@ -672,16 +866,23 @@ function toggleDisabled(tableId, btnId) {{
 
 // ---------------------------------------------------------- filtering
 function filterTable(tableId) {{
-  const search  = (document.getElementById(tableId + '-search')  || {{}}).value || '';
-  const typeVal = (document.getElementById(tableId + '-type')    || {{}}).value || '';
-  const needle  = search.trim().toLowerCase();
-  const tbody   = document.querySelector('#' + tableId + ' tbody');
+  const search    = (document.getElementById(tableId + '-search')  || {{}}).value || '';
+  const typeVal   = (document.getElementById(tableId + '-type')    || {{}}).value || '';
+  const domainVal = (document.getElementById(tableId + '-domain')  || {{}}).value || '';
+  const needle    = search.trim().toLowerCase();
+  const table     = document.getElementById(tableId);
+  const searchCols = table ? (table.dataset.searchCols || '').split(',').map(Number) : [];
+  const tbody     = document.querySelector('#' + tableId + ' tbody');
   Array.from(tbody.rows).forEach(r => {{
-    const text    = r.textContent.toLowerCase();
-    const typeCell = r.querySelector('td:nth-child(3)');
-    const matchText = !needle || text.includes(needle);
-    const matchType = !typeVal || (typeCell && typeCell.textContent.trim().toUpperCase() === typeVal.toUpperCase());
-    r._hiddenByFilter = !(matchText && matchType);
+    const domainCell = r.querySelector('td:nth-child(1)');
+    const typeCell   = r.querySelector('td:nth-child(3)');
+    const matchText  = !needle || searchCols.some(c => {{
+      const cell = r.cells[c];
+      return cell && cell.textContent.toLowerCase().includes(needle);
+    }});
+    const matchType   = !typeVal   || (typeCell   && typeCell.textContent.trim().toUpperCase()   === typeVal.toUpperCase());
+    const matchDomain = !domainVal || (domainCell && domainCell.textContent.trim() === domainVal);
+    r._hiddenByFilter = !(matchText && matchType && matchDomain);
   }});
   applyVisibility(tableId);
   _pageState[tableId] = {{ page: 1 }};
@@ -701,7 +902,7 @@ const _pageState = {{}};
 function paginate(tableId) {{
   const state   = _pageState[tableId] || (_pageState[tableId] = {{ page: 1 }});
   const sizeEl  = document.getElementById(tableId + '-size');
-  const pageSize = sizeEl ? (sizeEl.value === 'all' ? Infinity : parseInt(sizeEl.value)) : 10;
+  const pageSize = sizeEl ? (sizeEl.value === 'all' ? Infinity : parseInt(sizeEl.value)) : 25;
   const tbody   = document.querySelector('#' + tableId + ' tbody');
   const rows    = Array.from(tbody.rows).filter(r => !r._hiddenByToggle && !r._hiddenByFilter);
   const total   = rows.length;
@@ -747,9 +948,15 @@ function changePageSize(tableId) {{
 }}
 
 document.addEventListener('DOMContentLoaded', () => {{
-  ['cracked-table', 'blank-table', 'lm-table'].forEach(id => {{
-    if (document.getElementById(id)) paginate(id);
-  }});
+  const id = location.hash.replace('#', '') || 'summary';
+  const btn = document.getElementById('tab-' + id);
+  if (btn && !btn.classList.contains('empty')) {{
+    switchTab(id);
+  }} else {{
+    switchTab('summary');
+  }}
+  // draw charts after tab is visible
+  if (typeof _drawCharts === 'function') _drawCharts();
 }});
 </script>
 </body>
@@ -761,10 +968,17 @@ def badge(text: str, cls: str) -> str:
     return f'<span class="badge badge-{cls}">{text}</span>'
 
 
-def pagination_bar(table_id: str, toggle_id: str) -> str:
+def pagination_bar(table_id: str, toggle_id: str, domains: list[str]) -> str:
+    domain_opts = '<option value="">All domains</option>\n' + "\n".join(
+        f'    <option value="{d}">{d if d else "(no domain)"}</option>'
+        for d in sorted(domains)
+    )
     return f"""\
 <div class="table-controls">
-  <input class="filter-input" id="{table_id}-search" type="text" placeholder="Search username, domain&#8230;" oninput="filterTable('{table_id}')">
+  <input class="filter-input" id="{table_id}-search" type="text" placeholder="Search username, hash&#8230;" oninput="filterTable('{table_id}')">
+  <select class="filter-select" id="{table_id}-domain" onchange="filterTable('{table_id}')">
+    {domain_opts}
+  </select>
   <select class="filter-select" id="{table_id}-type" onchange="filterTable('{table_id}')">
     <option value="">All types</option>
     <option value="USER">User</option>
@@ -774,7 +988,6 @@ def pagination_bar(table_id: str, toggle_id: str) -> str:
   <div class="pagination-bar">
     <span>Show</span>
     <select id="{table_id}-size" onchange="changePageSize('{table_id}')">
-      <option value="10">10</option>
       <option value="25">25</option>
       <option value="50">50</option>
       <option value="100">100</option>
@@ -894,16 +1107,12 @@ def build_cracked_section(accounts: list[dict], cracked: dict[str, str], redacte
 """)
 
     pw_header = "Password" if not redacted else "Status"
+    domains = sorted({a["domain"] for a in cracked_accounts})
+    # search cols: 1=username, 4=NT hash, 5=password
     return f"""\
-<hr class="section-divider" />
-
-<!-- ======================================================= Cracked Passwords -->
-<div class="section-heading">
-  <h2>Cracked Passwords</h2>
-</div>
-{pagination_bar('cracked-table', 'cracked-toggle')}
+{pagination_bar('cracked-table', 'cracked-toggle', domains)}
 <div class="table-wrap">
-  <table id="cracked-table">
+  <table id="cracked-table" data-search-cols="1,4,5">
     <thead>
       <tr>
         <th>Domain</th>
@@ -941,16 +1150,12 @@ def build_blank_section(analysis: dict) -> str:
       </tr>
 """)
 
+    domains = sorted({a["domain"] for a in accounts})
+    # search cols: 1=username
     return f"""\
-<hr class="section-divider" />
-
-<!-- ======================================================= Blank Passwords -->
-<div class="section-heading">
-  <h2>Blank Passwords</h2>
-</div>
-{pagination_bar('blank-table', 'blank-toggle')}
+{pagination_bar('blank-table', 'blank-toggle', domains)}
 <div class="table-wrap">
-  <table id="blank-table">
+  <table id="blank-table" data-search-cols="1">
     <thead>
       <tr>
         <th>Domain</th>
@@ -992,19 +1197,15 @@ def build_lm_section(analysis: dict, redacted: bool = False) -> str:
 """)
 
     lm_header = "LM Hash" if not redacted else "LM Hash (Redacted)"
+    domains = sorted({a["domain"] for a in accounts})
+    # search cols: 1=username, 4=LM hash
     return f"""\
-<hr class="section-divider" />
-
-<!-- ======================================================= LM Hashes -->
-<div class="section-heading">
-  <h2>LM Hashes Present</h2>
-</div>
 <p style="font-size:12px; color: var(--muted); margin-bottom: 12px;">
   These accounts have LM hashing enabled. LM hashes are trivially crackable (max 14 chars, case-insensitive, split into two 7-char halves).
 </p>
-{pagination_bar('lm-table', 'lm-toggle')}
+{pagination_bar('lm-table', 'lm-toggle', domains)}
 <div class="table-wrap">
-  <table id="lm-table">
+  <table id="lm-table" data-search-cols="1,4">
     <thead>
       <tr>
         <th>Domain</th>
@@ -1021,6 +1222,89 @@ def build_lm_section(analysis: dict, redacted: bool = False) -> str:
 """
 
 
+def build_charts_section(accounts: list[dict], cracked: dict[str, str]) -> str:
+    """Build pie + bar charts for the summary tab. Returns empty string if no potfile."""
+    if not cracked:
+        return ""
+
+    # Unique NT hashes, excluding blank password
+    all_unique = {a["nt_hash"].lower() for a in accounts if a["nt_hash"].lower() != BLANK_NT_HASH}
+    cracked_unique = {h for h in all_unique if h in cracked}
+    uncracked_unique = all_unique - cracked_unique
+
+    num_cracked   = len(cracked_unique)
+    num_uncracked = len(uncracked_unique)
+
+    pie_data = [
+        {"value": num_cracked,   "color": "#d29922", "label": f"Cracked ({num_cracked})"},
+        {"value": num_uncracked, "color": "#30363d", "label": f"Uncracked ({num_uncracked})"},
+    ]
+
+    # Password length distribution (unique cracked passwords only)
+    length_counts: dict[int, int] = {}
+    for h in cracked_unique:
+        pw = cracked[h]
+        length_counts[len(pw)] = length_counts.get(len(pw), 0) + 1
+
+    bar_data = [{"label": str(l), "value": c}
+                for l, c in sorted(length_counts.items())]
+
+    import json
+    pie_json = json.dumps(pie_data)
+    bar_json = json.dumps(bar_data)
+
+    legend_html = "\n".join(
+        f'<div class="legend-item"><div class="legend-dot" style="background:{d["color"]}"></div><span>{d["label"]}</span></div>'
+        for d in pie_data
+    )
+
+    return f"""\
+<div class="charts-row">
+  <div class="chart-card">
+    <h3>Unique Password Coverage</h3>
+    <canvas id="pie-chart" width="180" height="180"></canvas>
+    <div class="chart-legend">{legend_html}</div>
+  </div>
+  <div class="chart-card" style="flex:2; min-width:360px;">
+    <h3>Cracked Password Lengths</h3>
+    <canvas id="bar-chart" width="560" height="200"></canvas>
+  </div>
+</div>
+<script>
+function _drawCharts() {{
+  const pieData = {pie_json};
+  const barData = {bar_json};
+  drawPie('pie-chart', pieData);
+  drawBar('bar-chart', barData);
+}}
+</script>"""
+
+
+def build_tab_bar(analysis: dict, reuse_cracked_count: int, cracked_account_count: int, has_cracked_potfile: bool) -> str:
+    reuse_label = "Password Reuse"
+    if reuse_cracked_count:
+        reuse_label += f' <span style="font-size:0.8em;color:var(--warn);">({reuse_cracked_count} Cracked)</span>'
+
+    tabs = [
+        ("summary", "Summary",          True),
+        ("reuse",   reuse_label,         bool(analysis["sorted_reused"])),
+    ]
+    if has_cracked_potfile:
+        tabs.append(("cracked", "Cracked Passwords", bool(cracked_account_count)))
+    tabs += [
+        ("blank", "Blank Passwords", bool(analysis["blank_accounts"])),
+        ("lm",    "LM Hashes",       bool(analysis["lm_accounts"])),
+    ]
+
+    buttons = []
+    for tab_id, label, has_content in tabs:
+        cls = "tab-btn" + ("" if has_content else " empty")
+        onclick = f'onclick="switchTab(\'{tab_id}\')"' if has_content else ""
+        buttons.append(f'  <button class="{cls}" id="tab-{tab_id}" {onclick}>{label}</button>')
+
+    return '<div class="tab-bar">\n' + '\n'.join(buttons) + '\n</div>'
+
+
 def write_html(accounts: list[dict], analysis: dict, cracked: dict[str, str], source_file: str, out_path: str, redacted: bool = False) -> None:
     reused_account_count = sum(len(v) for v in analysis["reused"].values())
     cracked_account_count = sum(
@@ -1032,7 +1316,6 @@ def write_html(accounts: list[dict], analysis: dict, cracked: dict[str, str], so
     cracked_reuse_count = sum(
         1 for h, _ in analysis["sorted_reused"] if h.lower() in cracked
     )
-    reuse_cracked_suffix = f' <span style="font-size:0.85em; color:var(--warn);">({cracked_reuse_count} Cracked)</span>' if cracked_reuse_count else ""
 
     if cracked:
         cracked_card = (
@@ -1046,6 +1329,13 @@ def write_html(accounts: list[dict], analysis: dict, cracked: dict[str, str], so
 
     logo_img = f'  <img src="{_LOGO_DATA_URI}" alt="Logo" />\n'
 
+    tab_bar = build_tab_bar(
+        analysis,
+        reuse_cracked_count=cracked_reuse_count,
+        cracked_account_count=cracked_account_count,
+        has_cracked_potfile=bool(cracked),
+    )
+
     html = HTML_TEMPLATE.format(
         source_file=Path(source_file).name,
         generated=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -1057,8 +1347,9 @@ def write_html(accounts: list[dict], analysis: dict, cracked: dict[str, str], so
         reused_hash_count=len(analysis["reused"]),
         reused_account_count=reused_account_count,
         cracked_card=cracked_card,
+        tab_bar=tab_bar,
+        charts_section=build_charts_section(accounts, cracked),
         reuse_section=build_reuse_section(analysis, cracked, redacted=redacted),
-        reuse_cracked_suffix=reuse_cracked_suffix,
         cracked_section=build_cracked_section(accounts, cracked, redacted=redacted),
         blank_section=build_blank_section(analysis),
         lm_section=build_lm_section(analysis, redacted=redacted),
