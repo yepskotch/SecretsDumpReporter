@@ -16,11 +16,9 @@ Parses the output of [Impacket](https://github.com/fortra/impacket)'s `secretsdu
 - **Self-contained output** — the HTML report embeds all assets (logo, CSS, JS); no internet connection required to view it
 - No external Python dependencies — stdlib only
 
-## Requirements
-
-- Python 3.10+
-
 ## Installation
+
+Requires Python 3.10+.
 
 Install from PyPI:
 
@@ -39,36 +37,6 @@ Or run directly from source without installing:
 ```
 python3 sdr.py <secretsdump_output.txt>
 ```
-
-## Usage
-
-```
-secretsdump-reporter <secretsdump_output.txt>
-```
-
-### Options
-
-| Flag | Description |
-|---|---|
-| `input` | Path to the secretsdump output file |
-| `-o / --output` | Base name for output files (default: input filename without extension) |
-| `-p / --potfile` | Path to a hashcat `.potfile` to match cracked passwords |
-
-### Example
-
-```
-secretsdump-reporter dump.txt
-secretsdump-reporter dump.txt -o results/report
-secretsdump-reporter dump.txt -p hashcat.potfile -o results/report
-```
-
-## Output files
-
-| File | Description |
-|---|---|
-| `<base>.html` | Full HTML report — NT hashes and cracked passwords are clickable to copy |
-| `<base>_redacted.html` | Redacted report — hashes partially obscured, passwords hidden; safe to share |
-| `<base>.csv` | Full account list — domain, username, RID, NT hash, type, status, reuse group, cracked password |
 
 ## Input format
 
@@ -91,3 +59,33 @@ domain\username:RID:LM_hash:NT_hash::: (status=Enabled|Disabled)
 ```
 
 Computer accounts (ending in `$`) are automatically distinguished from user accounts.
+
+## Usage
+
+```
+secretsdump-reporter <secretsdump_output.txt>
+```
+
+### Options
+
+| Flag | Description |
+|---|---|
+| `input` | Path to the secretsdump output file |
+| `-o / --output` | Base name for output files (default: input filename without extension) |
+| `-p / --potfile` | Path to a hashcat `.potfile` to match cracked passwords |
+
+### Example
+
+```
+secretsdump-reporter dump.ntds
+secretsdump-reporter dump.ntds -o results/report
+secretsdump-reporter dump.ntds -p hashcat.potfile -o results/report
+```
+
+## Output files
+
+| File | Description |
+|---|---|
+| `<base>.html` | Full HTML report — NT hashes and cracked passwords are clickable to copy |
+| `<base>_redacted.html` | Redacted report — hashes partially obscured, passwords hidden; safe to share |
+| `<base>.csv` | Full account list — domain, username, RID, NT hash, type, status, reuse group, cracked password |
