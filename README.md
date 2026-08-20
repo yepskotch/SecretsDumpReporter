@@ -2,7 +2,7 @@
 
 Parses the output of [Impacket](https://github.com/fortra/impacket)'s `secretsdump.py` (run with `-user-status`) and produces a self-contained HTML report and a CSV file for further analysis.
 
-![SecretsDump Reporter screenshot](screenshot.png)
+![SecretsDump Reporter screenshot](https://raw.githubusercontent.com/yepskotch/SecretsDumpReporter/main/screenshot.png)
 
 ## Features
 
@@ -22,13 +22,19 @@ Parses the output of [Impacket](https://github.com/fortra/impacket)'s `secretsdu
 
 ## Installation
 
-Install with pipx for a globally available command:
+Install from PyPI:
 
 ```
-pipx install git+https://github.com/yepskotch/SecretsDumpReporter
+pip install secretsdump-reporter
 ```
 
-Or run directly without installing:
+Or with pipx for an isolated, globally available command:
+
+```
+pipx install secretsdump-reporter
+```
+
+Or run directly from source without installing:
 
 ```
 python3 sdr.py <secretsdump_output.txt>
