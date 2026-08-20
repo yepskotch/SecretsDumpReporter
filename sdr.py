@@ -14,6 +14,22 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
+def _get_version() -> str:
+    try:
+        from importlib.metadata import version
+        return version("secretsdump-reporter")
+    except Exception:
+        pass
+    # fallback: read pyproject.toml (development / source installs)
+    try:
+        toml = (Path(__file__).parent / "pyproject.toml").read_text()
+        m = re.search(r'^version\s*=\s*"([^"]+)"', toml, re.MULTILINE)
+        return m.group(1) if m else "unknown"
+    except Exception:
+        return "unknown"
+
+_VERSION = _get_version()
+
 # --------------------------------------------------------------------------- #
 #  Logo (hardcoded base64)                                                     #
 # --------------------------------------------------------------------------- #
@@ -573,6 +589,30 @@ HTML_TEMPLATE = """\
     }}
 
     /* ------------------------------------------------------------------ */
+    /*  Footer                                                              */
+    /* ------------------------------------------------------------------ */
+    .page-footer {{
+      margin-top: 48px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+      font-size: 11px;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+    }}
+
+    .page-footer a {{
+      color: var(--muted);
+    }}
+
+    .page-footer a:hover {{
+      color: var(--accent);
+    }}
+
+    /* ------------------------------------------------------------------ */
     /*  Tabs                                                                */
     /* ------------------------------------------------------------------ */
     .tab-bar {{
@@ -959,6 +999,23 @@ document.addEventListener('DOMContentLoaded', () => {{
   if (typeof _drawCharts === 'function') _drawCharts();
 }});
 </script>
+<footer class="page-footer">
+  <span style="display:flex; align-items:center; gap:8px;">
+    <a href="https://github.com/yepskotch/SecretsDumpReporter" target="_blank" title="github.com/yepskotch/SecretsDumpReporter">
+      <svg height="16" width="16" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+        <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38
+                 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13
+                 -.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66
+                 .07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15
+                 -.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27
+                 .68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12
+                 .51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48
+                 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+      </svg>
+    </a>
+    <span>SecretsDump Reporter v{version}</span>
+  </span>
+</footer>
 </body>
 </html>
 """
@@ -1360,6 +1417,7 @@ def write_html(accounts: list[dict], analysis: dict, cracked: dict[str, str], so
         blank_count=len(analysis["blank_accounts"]),
         lm_count=len(analysis["lm_accounts"]),
         logo_img=logo_img,
+        version=_VERSION,
     )
 
     with open(out_path, "w", encoding="utf-8") as fh:
