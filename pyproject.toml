@@ -8,7 +8,8 @@ version = "1.2.2"
 description = "Parse secretsdump output and generate HTML reports and CSV with password reuse analysis"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { file = "LICENSE" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "yepskotch" }]
 keywords = ["secretsdump", "ntds", "active-directory", "password", "pentest", "security"]
 classifiers = [
@@ -16,7 +17,6 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
-    "License :: OSI Approved :: MIT License",
     "Topic :: Security",
     "Environment :: Console",
     "Intended Audience :: Information Technology",
