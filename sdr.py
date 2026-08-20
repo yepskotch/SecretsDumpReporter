@@ -214,6 +214,20 @@ HTML_TEMPLATE = """\
       --mono:      'Cascadia Code', 'Fira Code', 'Consolas', monospace;
     }}
 
+    body.light {{
+      --bg:        #ffffff;
+      --bg2:       #f6f8fa;
+      --bg3:       #eaeef2;
+      --border:    #d0d7de;
+      --accent:    #0969da;
+      --accent2:   #1a7f37;
+      --danger:    #d1242f;
+      --warn:      #9a6700;
+      --muted:     #656d76;
+      --text:      #1f2328;
+      --text-head: #010409;
+    }}
+
     body {{
       background: var(--bg);
       color: var(--text);
@@ -340,6 +354,12 @@ HTML_TEMPLATE = """\
     .badge-user     {{ background: #2a2a1a; color: var(--warn);    border: 1px solid #d29922; }}
     .badge-cracked  {{ background: #3a3010; color: #e3b341;        border: 1px solid #d29922; }}
 
+    body.light .badge-enabled  {{ background: #dafbe1; color: #1a7f37; border-color: #1a7f37; }}
+    body.light .badge-disabled {{ background: #ffebe9; color: #d1242f; border-color: #d1242f; }}
+    body.light .badge-computer {{ background: #ddf4ff; color: #0969da; border-color: #0969da; }}
+    body.light .badge-user     {{ background: #fff8c5; color: #9a6700; border-color: #9a6700; }}
+    body.light .badge-cracked  {{ background: #fff8c5; color: #9a6700; border-color: #9a6700; }}
+
     /* ------------------------------------------------------------------ */
     /*  Reuse section                                                       */
     /* ------------------------------------------------------------------ */
@@ -383,6 +403,11 @@ HTML_TEMPLATE = """\
       flex-shrink: 0;
     }}
 
+    body.light .reuse-header .hash {{
+      color: #656d76;
+      background: #eaeef2;
+    }}
+
     .reuse-header .hash.copyable {{
       cursor: pointer;
       transition: border-color .15s, color .15s;
@@ -424,6 +449,13 @@ HTML_TEMPLATE = """\
 
     .reuse-header.cracked:hover {{ background: #3a2d00; }}
 
+    body.light .reuse-header.cracked {{
+      background: #fffbe6;
+      border-bottom-color: #d29922;
+    }}
+
+    body.light .reuse-header.cracked:hover {{ background: #fff3c0; }}
+
     .cracked-pw {{
       font-family: var(--mono);
       font-size: 12px;
@@ -433,6 +465,12 @@ HTML_TEMPLATE = """\
       border-radius: 4px;
       padding: 1px 8px;
       flex-shrink: 0;
+    }}
+
+    body.light .cracked-pw {{
+      color: #9a6700;
+      background: #fff8c5;
+      border-color: #9a6700;
     }}
 
     .cracked-pw.copyable {{
@@ -456,6 +494,14 @@ HTML_TEMPLATE = """\
 
     tr.cracked-row:hover td {{
       background: #2a2500 !important;
+    }}
+
+    body.light tr.cracked-row td {{
+      background: #fffbe6 !important;
+    }}
+
+    body.light tr.cracked-row:hover td {{
+      background: #fff3c0 !important;
     }}
 
     /* ------------------------------------------------------------------ */
@@ -582,6 +628,28 @@ HTML_TEMPLATE = """\
       height: 52px;
       width: auto;
       flex-shrink: 0;
+    }}
+
+    .page-header-right {{
+      margin-left: auto;
+    }}
+
+    .theme-btn {{
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--muted);
+      cursor: pointer;
+      font-family: var(--font);
+      font-size: 12px;
+      padding: 4px 10px;
+      transition: border-color .15s, color .15s;
+      user-select: none;
+    }}
+
+    .theme-btn:hover {{
+      border-color: var(--accent);
+      color: var(--accent);
     }}
 
     .page-header-text h1 {{
@@ -713,6 +781,9 @@ HTML_TEMPLATE = """\
 {logo_img}  <div class="page-header-text">
     <h1>SecretsDump Report</h1>
   </div>
+  <div class="page-header-right">
+    <button class="theme-btn" id="theme-btn" onclick="toggleTheme()">☀ Light</button>
+  </div>
 </div>
 <p class="subtitle">
   Source: <strong>{source_file}</strong> &nbsp;&bull;&nbsp;
@@ -784,6 +855,24 @@ HTML_TEMPLATE = """\
 </div>
 
 <script>
+// ---------------------------------------------------------- theme toggle
+function toggleTheme() {{
+  const light = document.body.classList.toggle('light');
+  document.getElementById('theme-btn').textContent = light ? '☽ Dark' : '☀ Light';
+  localStorage.setItem('sdr-theme', light ? 'light' : 'dark');
+  if (typeof _drawCharts === 'function') _drawCharts();
+}}
+
+(function() {{
+  if (localStorage.getItem('sdr-theme') === 'light') {{
+    document.body.classList.add('light');
+    document.addEventListener('DOMContentLoaded', () => {{
+      const btn = document.getElementById('theme-btn');
+      if (btn) btn.textContent = '☽ Dark';
+    }});
+  }}
+}})();
+
 // ---------------------------------------------------------- tabs
 function switchTab(id) {{
   document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
@@ -1300,8 +1389,7 @@ def build_charts_section(accounts: list[dict], cracked: dict[str, str]) -> str:
     pie_data = [
         {"value": num_cracked,   "color": "#d29922", "label": f"Cracked ({num_cracked} — {cracked_pct}%)"},
         {"value": num_uncracked, "color": "#30363d", "label": f"Uncracked ({num_uncracked} — {uncracked_pct}%)"},
-    ]
-    # Password length distribution (unique cracked passwords only)
+    ]    # Password length distribution (unique cracked passwords only)
     length_counts: dict[int, int] = {}
     for h in cracked_unique:
         pw = cracked[h]
@@ -1333,7 +1421,10 @@ def build_charts_section(accounts: list[dict], cracked: dict[str, str]) -> str:
 </div>
 <script>
 function _drawCharts() {{
+  const light = document.body.classList.contains('light');
   const pieData = {pie_json};
+  // adjust uncracked slice colour for light mode
+  if (pieData[1]) pieData[1].color = light ? '#d0d7de' : '#30363d';
   const barData = {bar_json};
   drawPie('pie-chart', pieData);
   drawBar('bar-chart', barData);
