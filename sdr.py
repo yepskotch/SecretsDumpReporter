@@ -1228,18 +1228,22 @@ def build_charts_section(accounts: list[dict], cracked: dict[str, str]) -> str:
         return ""
 
     # Unique NT hashes, excluding blank password
-    all_unique = {a["nt_hash"].lower() for a in accounts if a["nt_hash"].lower() != BLANK_NT_HASH}
+    all_unique = {a["nt_hash"].lower() for a in accounts
+                  if a["nt_hash"].lower() != BLANK_NT_HASH and not a["is_computer"]}
     cracked_unique = {h for h in all_unique if h in cracked}
     uncracked_unique = all_unique - cracked_unique
 
     num_cracked   = len(cracked_unique)
     num_uncracked = len(uncracked_unique)
 
-    pie_data = [
-        {"value": num_cracked,   "color": "#d29922", "label": f"Cracked ({num_cracked})"},
-        {"value": num_uncracked, "color": "#30363d", "label": f"Uncracked ({num_uncracked})"},
-    ]
+    total_unique = num_cracked + num_uncracked
+    cracked_pct   = round(num_cracked   / total_unique * 100, 1) if total_unique else 0
+    uncracked_pct = round(num_uncracked / total_unique * 100, 1) if total_unique else 0
 
+    pie_data = [
+        {"value": num_cracked,   "color": "#d29922", "label": f"Cracked ({num_cracked} — {cracked_pct}%)"},
+        {"value": num_uncracked, "color": "#30363d", "label": f"Uncracked ({num_uncracked} — {uncracked_pct}%)"},
+    ]
     # Password length distribution (unique cracked passwords only)
     length_counts: dict[int, int] = {}
     for h in cracked_unique:
@@ -1261,7 +1265,7 @@ def build_charts_section(accounts: list[dict], cracked: dict[str, str]) -> str:
     return f"""\
 <div class="charts-row">
   <div class="chart-card">
-    <h3>Unique Password Coverage</h3>
+    <h3>User Password Coverage</h3>
     <canvas id="pie-chart" width="180" height="180"></canvas>
     <div class="chart-legend">{legend_html}</div>
   </div>
