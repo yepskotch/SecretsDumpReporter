@@ -8,7 +8,24 @@ version = "1.2.2"
 description = "Parse secretsdump output and generate HTML reports and CSV with password reuse analysis"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = { file = "LICENSE" }
+authors = [{ name = "yepskotch" }]
+keywords = ["secretsdump", "ntds", "active-directory", "password", "pentest", "security"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Security",
+    "Environment :: Console",
+    "Intended Audience :: Information Technology",
+]
+
+[project.urls]
+Homepage = "https://github.com/yepskotch/SecretsDumpReporter"
+Repository = "https://github.com/yepskotch/SecretsDumpReporter"
+"Bug Tracker" = "https://github.com/yepskotch/SecretsDumpReporter/issues"
 
 [project.scripts]
 secretsdump-reporter = "sdr:main"
