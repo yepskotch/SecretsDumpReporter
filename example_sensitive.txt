@@ -1,0 +1,23 @@
+# Sensitive account patterns for SecretsDump Reporter
+# One regex per line. Lines starting with # are ignored.
+# Matching is case-insensitive against the username only.
+
+# Built-in privileged accounts
+^administrator$
+^admin$
+^krbtgt$
+^guest$
+
+# Service accounts
+^svc_
+_svc$
+^service
+
+# Admin naming conventions
+_adm$
+_admin$
+^adm_
+^da_
+
+# Domain controllers
+^dc\d

@@ -79,3 +79,7 @@ domain.local\BlankWS01$:2303:aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b7
 domain.local\LMUser1:2304:e52cac67419a9a224a3b108f3fa6cb6d:c53d17892a8d0f2d8d251c8331387b1d::: (status=Enabled)
 domain.local\LMUser2:2305:c23413a8a1e7665faad3b435b51404ee:fbbd171c817c81e0dfcf837bc6f0705f::: (status=Enabled)
 domain.local\LMUser3:2306:8846f7eaee8fb117ad06bdd830b7586c:1feb07b141deec907cc001e167e24c12::: (status=Disabled)
+domain.local\Administrator:500:aad3b435b51404eeaad3b435b51404ee:eeb674aa4db3ca34c17f48edc8e4e6a9::: (status=Enabled)
+domain.local\krbtgt:502:aad3b435b51404eeaad3b435b51404ee:8f68d9d9b0341314a5534ea92b26fa8a::: (status=Disabled)
+domain.local\svc_backup:2400:aad3b435b51404eeaad3b435b51404ee:6323c46a8f7693e56a2ad5f8c76403f8::: (status=Enabled)
+domain.local\adm_jones:2401:aad3b435b51404eeaad3b435b51404ee:be2d9b961222238ccd1d2149036d6651::: (status=Enabled)
