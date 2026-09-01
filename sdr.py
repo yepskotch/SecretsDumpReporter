@@ -44,6 +44,26 @@ _LOGO_DATA_URI = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHgAAAB4CAYAAAA5
 BLANK_NT_HASH = "31d6cfe0d16ae931b73c59d7e0c089c0"
 LM_DISABLED   = "aad3b435b51404eeaad3b435b51404ee"
 
+
+def parse_sensitive(value: str):
+    """Return a compiled case-insensitive regex from a pattern string or file.
+    Returns None if value is empty/None."""
+    if not value:
+        return None
+    p = Path(value)
+    if p.exists():
+        patterns = []
+        for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if line and not line.startswith("#"):
+                patterns.append(line)
+        if not patterns:
+            return None
+        combined = "|".join(f"(?:{p})" for p in patterns)
+    else:
+        combined = value
+    return re.compile(combined, re.IGNORECASE)
+
 LINE_RE = re.compile(
     r"^(?:(?P<domain>[^\\]+)\\)?(?P<username>[^:]+)"
     r":(?P<rid>\d+)"
@@ -98,11 +118,15 @@ def parse_potfile(path: str) -> dict[str, str]:
 #  Analysis                                                                    #
 # --------------------------------------------------------------------------- #
 
-def analyse(accounts: list[dict]) -> dict:
+def analyse(accounts: list[dict], sensitive_re=None) -> dict:
     enabled_users = [a for a in accounts if a["enabled"] and not a["is_computer"]]
     disabled_users = [a for a in accounts if not a["enabled"] and not a["is_computer"]]
     enabled_computers = [a for a in accounts if a["enabled"] and a["is_computer"]]
     disabled_computers = [a for a in accounts if not a["enabled"] and a["is_computer"]]
+
+    # Tag each account with is_sensitive
+    for a in accounts:
+        a["is_sensitive"] = bool(sensitive_re and sensitive_re.search(a["username"]))
 
     # Group ALL accounts by NT hash to detect reuse
     hash_to_accounts: dict[str, list[dict]] = defaultdict(list)
@@ -133,6 +157,9 @@ def analyse(accounts: list[dict]) -> dict:
     # LM hashes present (LM field is not the disabled placeholder)
     lm_accounts = [a for a in accounts if a["lm_hash"].lower() != LM_DISABLED]
 
+    # Sensitive accounts
+    sensitive_accounts = [a for a in accounts if a["is_sensitive"]]
+
     return {
         "enabled_users": enabled_users,
         "disabled_users": disabled_users,
@@ -143,6 +170,7 @@ def analyse(accounts: list[dict]) -> dict:
         "sorted_reused": sorted_reused,
         "blank_accounts": blank_accounts,
         "lm_accounts": lm_accounts,
+        "sensitive_accounts": sensitive_accounts,
         "total": len(accounts),
     }
 
@@ -151,7 +179,7 @@ def analyse(accounts: list[dict]) -> dict:
 #  CSV output                                                                  #
 # --------------------------------------------------------------------------- #
 
-def write_csv(accounts: list[dict], analysis: dict, cracked: dict[str, str], out_path: str) -> None:
+def write_csv(accounts: list[dict], analysis: dict, cracked: dict[str, str], has_sensitive: bool, out_path: str) -> None:
     # Build a lookup: nt_hash -> reuse group index (1-based, None if not reused)
     hash_to_group: dict[str, int] = {}
     for idx, (h, _) in enumerate(analysis["sorted_reused"], 1):
@@ -162,11 +190,14 @@ def write_csv(accounts: list[dict], analysis: dict, cracked: dict[str, str], out
         "account_type", "status", "password_reuse_group", "cracked_password",
         "blank_password", "lm_hash_present",
     ]
+    if has_sensitive:
+        fieldnames.append("sensitive")
+
     with open(out_path, "w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=fieldnames)
         writer.writeheader()
         for a in accounts:
-            writer.writerow({
+            row = {
                 "domain": a["domain"],
                 "username": a["username"],
                 "rid": a["rid"],
@@ -177,7 +208,10 @@ def write_csv(accounts: list[dict], analysis: dict, cracked: dict[str, str], out
                 "cracked_password": cracked.get(a["nt_hash"].lower(), ""),
                 "blank_password": "Yes" if a["nt_hash"].lower() == BLANK_NT_HASH else "",
                 "lm_hash_present": "Yes" if a["lm_hash"].lower() != LM_DISABLED else "",
-            })
+            }
+            if has_sensitive:
+                row["sensitive"] = "Yes" if a.get("is_sensitive") else ""
+            writer.writerow(row)
 
 
 # --------------------------------------------------------------------------- #
@@ -360,6 +394,9 @@ HTML_TEMPLATE = """\
     body.light .badge-user     {{ background: #fff8c5; color: #9a6700; border-color: #9a6700; }}
     body.light .badge-cracked  {{ background: #fff8c5; color: #9a6700; border-color: #9a6700; }}
 
+    .badge-sensitive {{ background: #3a0000; color: #ff7b72; border: 1px solid #f85149; }}
+    body.light .badge-sensitive {{ background: #ffebe9; color: #d1242f; border-color: #d1242f; }}
+
     /* ------------------------------------------------------------------ */
     /*  Reuse section                                                       */
     /* ------------------------------------------------------------------ */
@@ -455,6 +492,39 @@ HTML_TEMPLATE = """\
     }}
 
     body.light .reuse-header.cracked:hover {{ background: #fff3c0; }}
+
+    .sensitive-pill {{
+      font-family: var(--mono);
+      font-size: 11px;
+      color: #ff7b72;
+      background: #3a0000;
+      border: 1px solid #f85149;
+      border-radius: 4px;
+      padding: 1px 8px;
+      flex-shrink: 0;
+    }}
+
+    body.light .sensitive-pill {{
+      color: #d1242f;
+      background: #ffebe9;
+      border-color: #d1242f;
+    }}
+
+    tr.sensitive-row td {{
+      background: #200000 !important;
+    }}
+
+    tr.sensitive-row:hover td {{
+      background: #2d0000 !important;
+    }}
+
+    body.light tr.sensitive-row td {{
+      background: #ffebe9 !important;
+    }}
+
+    body.light tr.sensitive-row:hover td {{
+      background: #ffd7d5 !important;
+    }}
 
     .cracked-pw {{
       font-family: var(--mono);
@@ -830,7 +900,7 @@ HTML_TEMPLATE = """\
     <div class="label">LM Hashes</div>
     <div class="value">{lm_count}</div>
   </div>
-{cracked_card}</div>
+{cracked_card}{sensitive_card}</div>
 {charts_section}
 </div>
 
@@ -995,13 +1065,14 @@ function toggleDisabled(tableId, btnId) {{
 
 // ---------------------------------------------------------- filtering
 function filterTable(tableId) {{
-  const search    = (document.getElementById(tableId + '-search')  || {{}}).value || '';
-  const typeVal   = (document.getElementById(tableId + '-type')    || {{}}).value || '';
-  const domainVal = (document.getElementById(tableId + '-domain')  || {{}}).value || '';
-  const needle    = search.trim().toLowerCase();
-  const table     = document.getElementById(tableId);
-  const searchCols = table ? (table.dataset.searchCols || '').split(',').map(Number) : [];
-  const tbody     = document.querySelector('#' + tableId + ' tbody');
+  const search      = (document.getElementById(tableId + '-search')    || {{}}).value || '';
+  const typeVal     = (document.getElementById(tableId + '-type')      || {{}}).value || '';
+  const domainVal   = (document.getElementById(tableId + '-domain')    || {{}}).value || '';
+  const sensitiveVal= (document.getElementById(tableId + '-sensitive') || {{}}).value || '';
+  const needle      = search.trim().toLowerCase();
+  const table       = document.getElementById(tableId);
+  const searchCols  = table ? (table.dataset.searchCols || '').split(',').map(Number) : [];
+  const tbody       = document.querySelector('#' + tableId + ' tbody');
   Array.from(tbody.rows).forEach(r => {{
     const domainCell = r.querySelector('td:nth-child(1)');
     const typeCell   = r.querySelector('td:nth-child(3)');
@@ -1009,9 +1080,11 @@ function filterTable(tableId) {{
       const cell = r.cells[c];
       return cell && cell.textContent.toLowerCase().includes(needle);
     }});
-    const matchType   = !typeVal   || (typeCell   && typeCell.textContent.trim().toUpperCase()   === typeVal.toUpperCase());
-    const matchDomain = !domainVal || (domainCell && domainCell.textContent.trim() === domainVal);
-    r._hiddenByFilter = !(matchText && matchType && matchDomain);
+    const matchType      = !typeVal      || (typeCell   && typeCell.textContent.trim().toUpperCase()   === typeVal.toUpperCase());
+    const matchDomain    = !domainVal    || (domainCell && domainCell.textContent.trim() === domainVal);
+    const isSensitive    = r.classList.contains('sensitive-row') ? '1' : '0';
+    const matchSensitive = !sensitiveVal || isSensitive === sensitiveVal;
+    r._hiddenByFilter = !(matchText && matchType && matchDomain && matchSensitive);
   }});
   applyVisibility(tableId);
   _pageState[tableId] = {{ page: 1 }};
@@ -1114,11 +1187,19 @@ def badge(text: str, cls: str) -> str:
     return f'<span class="badge badge-{cls}">{text}</span>'
 
 
-def pagination_bar(table_id: str, toggle_id: str, domains: list[str]) -> str:
+def pagination_bar(table_id: str, toggle_id: str, domains: list[str], has_sensitive: bool = False) -> str:
     domain_opts = '<option value="">All domains</option>\n' + "\n".join(
         f'    <option value="{d}">{d if d else "(no domain)"}</option>'
         for d in sorted(domains)
     )
+    sensitive_select = ""
+    if has_sensitive:
+        sensitive_select = f"""\
+  <select class="filter-select" id="{table_id}-sensitive" onchange="filterTable('{table_id}')">
+    <option value="">All accounts</option>
+    <option value="1">Sensitive only</option>
+    <option value="0">Not sensitive</option>
+  </select>"""
     return f"""\
 <div class="table-controls">
   <input class="filter-input" id="{table_id}-search" type="text" placeholder="Search username, hash&#8230;" oninput="filterTable('{table_id}')">
@@ -1130,6 +1211,7 @@ def pagination_bar(table_id: str, toggle_id: str, domains: list[str]) -> str:
     <option value="USER">User</option>
     <option value="COMPUTER">Computer</option>
   </select>
+  {sensitive_select}
   <button class="toggle-btn" id="{toggle_id}" onclick="toggleDisabled('{table_id}', '{toggle_id}')">Hide Disabled</button>
   <div class="pagination-bar">
     <span>Show</span>
@@ -1151,7 +1233,7 @@ def redact_hash(h: str) -> str:
     return h[:4] + "*" * (len(h) - 8) + h[-4:]
 
 
-def build_reuse_section(analysis: dict, cracked: dict[str, str], redacted: bool = False) -> str:
+def build_reuse_section(analysis: dict, cracked: dict[str, str], has_sensitive: bool, redacted: bool = False) -> str:
     if not analysis["sorted_reused"]:
         return "<p>No password reuse detected.</p>"
 
@@ -1161,6 +1243,8 @@ def build_reuse_section(analysis: dict, cracked: dict[str, str], redacted: bool 
         total_count = len(all_accs)
         enabled_count = len(enabled_accs)
         password = cracked.get(nt_hash.lower())
+        group_has_sensitive = any(a.get("is_sensitive") for a in all_accs)
+
         if redacted:
             hash_span = f'<span class="hash">{redact_hash(nt_hash)}</span>'
         else:
@@ -1173,14 +1257,23 @@ def build_reuse_section(analysis: dict, cracked: dict[str, str], redacted: bool 
         else:
             cracked_indicator = ""
 
-        header_class = ' cracked' if password else ''
+        sensitive_indicator = '<span class="sensitive-pill">SENSITIVE</span>\n    ' if group_has_sensitive else ""
+
+        header_classes = ""
+        if password:
+            header_classes += " cracked"
+        if group_has_sensitive:
+            header_classes += " sensitive"
+
+        # Add Sensitive column header only when sensitive patterns are in use
+        sensitive_th = "<th>Sensitive</th>" if has_sensitive else ""
 
         parts.append(f"""
 <div class="reuse-group">
-  <div class="reuse-header{header_class}" onclick="toggleReuse(this)">
+  <div class="reuse-header{header_classes}" onclick="toggleReuse(this)">
     <span class="group-num">{idx}</span>
     {hash_span}
-    {cracked_indicator}<span class="spacer"></span><span class="counts">
+    {cracked_indicator}{sensitive_indicator}<span class="spacer"></span><span class="counts">
       {total_count} total &nbsp;|&nbsp; {enabled_count} enabled
     </span>
     <span class="chevron">&#9658;</span>
@@ -1194,6 +1287,7 @@ def build_reuse_section(analysis: dict, cracked: dict[str, str], redacted: bool 
             <th>Username</th>
             <th>Type</th>
             <th>Status</th>
+            {sensitive_th}
           </tr>
         </thead>
         <tbody>
@@ -1202,12 +1296,15 @@ def build_reuse_section(analysis: dict, cracked: dict[str, str], redacted: bool 
             status_badge = badge(a["status"], "enabled" if a["enabled"] else "disabled")
             type_badge = badge("Computer" if a["is_computer"] else "User",
                                "computer" if a["is_computer"] else "user")
+            row_class = ' class="sensitive-row"' if a.get("is_sensitive") else ""
+            sensitive_td = f'<td>{badge("SENSITIVE", "sensitive") if a.get("is_sensitive") else ""}</td>' if has_sensitive else ""
             parts.append(f"""\
-          <tr>
+          <tr{row_class}>
             <td>{a['domain']}</td>
             <td>{a['username']}</td>
             <td>{type_badge}</td>
             <td>{status_badge}</td>
+            {sensitive_td}
           </tr>
 """)
         parts.append("""\
@@ -1220,7 +1317,7 @@ def build_reuse_section(analysis: dict, cracked: dict[str, str], redacted: bool 
     return "".join(parts)
 
 
-def build_cracked_section(accounts: list[dict], cracked: dict[str, str], redacted: bool = False) -> str:
+def build_cracked_section(accounts: list[dict], cracked: dict[str, str], has_sensitive: bool, redacted: bool = False) -> str:
     """Build the 'Cracked Passwords' section listing all accounts with a cracked hash."""
     cracked_accounts = [
         a for a in accounts
@@ -1241,22 +1338,26 @@ def build_cracked_section(accounts: list[dict], cracked: dict[str, str], redacte
         else:
             hash_cell = f'<span class="mono cracked-pw copyable" title="Click to copy" onclick="copyHash(event, this, \'{a["nt_hash"]}\')">{a["nt_hash"]}</span>'
             pw_cell = f'<span class="mono cracked-pw copyable" title="Click to copy" onclick="copyHash(event, this, \'{password}\')">{password}</span>'
+        row_classes = "cracked-row" + (" sensitive-row" if a.get("is_sensitive") else "")
+        sensitive_td = f'<td>{badge("SENSITIVE", "sensitive") if a.get("is_sensitive") else ""}</td>' if has_sensitive else ""
         rows.append(f"""\
-      <tr class="cracked-row" data-disabled="{'1' if not a['enabled'] else '0'}">
+      <tr class="{row_classes}" data-disabled="{'1' if not a['enabled'] else '0'}">
         <td>{a['domain']}</td>
         <td>{a['username']}</td>
         <td>{type_badge}</td>
         <td>{status_badge}</td>
         <td>{hash_cell}</td>
         <td>{pw_cell}</td>
+        {sensitive_td}
       </tr>
 """)
 
     pw_header = "Password" if not redacted else "Status"
     domains = sorted({a["domain"] for a in cracked_accounts})
+    sensitive_th = "<th>Sensitive</th>" if has_sensitive else ""
     # search cols: 1=username, 4=NT hash, 5=password
     return f"""\
-{pagination_bar('cracked-table', 'cracked-toggle', domains)}
+{pagination_bar('cracked-table', 'cracked-toggle', domains, has_sensitive)}
 <div class="table-wrap">
   <table id="cracked-table" data-search-cols="1,4,5">
     <thead>
@@ -1267,6 +1368,7 @@ def build_cracked_section(accounts: list[dict], cracked: dict[str, str], redacte
         <th>Status</th>
         <th>NT Hash</th>
         <th>{pw_header}</th>
+        {sensitive_th}
       </tr>
     </thead>
     <tbody>
@@ -1276,7 +1378,7 @@ def build_cracked_section(accounts: list[dict], cracked: dict[str, str], redacte
 """
 
 
-def build_blank_section(analysis: dict) -> str:
+def build_blank_section(analysis: dict, has_sensitive: bool) -> str:
     """Build the 'Blank Passwords' section — same content for full and redacted reports."""
     accounts = analysis["blank_accounts"]
     if not accounts:
@@ -1287,19 +1389,23 @@ def build_blank_section(analysis: dict) -> str:
         status_badge = badge(a["status"], "enabled" if a["enabled"] else "disabled")
         type_badge   = badge("Computer" if a["is_computer"] else "User",
                              "computer" if a["is_computer"] else "user")
+        row_class = ' class="sensitive-row"' if a.get("is_sensitive") else ""
+        sensitive_td = f'<td>{badge("SENSITIVE", "sensitive") if a.get("is_sensitive") else ""}</td>' if has_sensitive else ""
         rows.append(f"""\
-      <tr data-disabled="{'1' if not a['enabled'] else '0'}">
+      <tr{row_class} data-disabled="{'1' if not a['enabled'] else '0'}">
         <td>{a['domain']}</td>
         <td>{a['username']}</td>
         <td>{type_badge}</td>
         <td>{status_badge}</td>
+        {sensitive_td}
       </tr>
 """)
 
     domains = sorted({a["domain"] for a in accounts})
+    sensitive_th = "<th>Sensitive</th>" if has_sensitive else ""
     # search cols: 1=username
     return f"""\
-{pagination_bar('blank-table', 'blank-toggle', domains)}
+{pagination_bar('blank-table', 'blank-toggle', domains, has_sensitive)}
 <div class="table-wrap">
   <table id="blank-table" data-search-cols="1">
     <thead>
@@ -1308,6 +1414,7 @@ def build_blank_section(analysis: dict) -> str:
         <th>Username</th>
         <th>Type</th>
         <th>Status</th>
+        {sensitive_th}
       </tr>
     </thead>
     <tbody>
@@ -1317,7 +1424,7 @@ def build_blank_section(analysis: dict) -> str:
 """
 
 
-def build_lm_section(analysis: dict, redacted: bool = False) -> str:
+def build_lm_section(analysis: dict, has_sensitive: bool, redacted: bool = False) -> str:
     """Build the 'LM Hashes' section."""
     accounts = analysis["lm_accounts"]
     if not accounts:
@@ -1332,24 +1439,28 @@ def build_lm_section(analysis: dict, redacted: bool = False) -> str:
             lm_cell = f'<span class="mono">{redact_hash(a["lm_hash"])}</span>'
         else:
             lm_cell = f'<span class="mono cracked-pw copyable" title="Click to copy" onclick="copyHash(event, this, \'{a["lm_hash"]}\')">{a["lm_hash"]}</span>'
+        row_class = ' class="sensitive-row"' if a.get("is_sensitive") else ""
+        sensitive_td = f'<td>{badge("SENSITIVE", "sensitive") if a.get("is_sensitive") else ""}</td>' if has_sensitive else ""
         rows.append(f"""\
-      <tr data-disabled="{'1' if not a['enabled'] else '0'}">
+      <tr{row_class} data-disabled="{'1' if not a['enabled'] else '0'}">
         <td>{a['domain']}</td>
         <td>{a['username']}</td>
         <td>{type_badge}</td>
         <td>{status_badge}</td>
         <td>{lm_cell}</td>
+        {sensitive_td}
       </tr>
 """)
 
     lm_header = "LM Hash" if not redacted else "LM Hash (Redacted)"
     domains = sorted({a["domain"] for a in accounts})
+    sensitive_th = "<th>Sensitive</th>" if has_sensitive else ""
     # search cols: 1=username, 4=LM hash
     return f"""\
 <p style="font-size:12px; color: var(--muted); margin-bottom: 12px;">
   These accounts have LM hashing enabled. LM hashes are trivially crackable (max 14 chars, case-insensitive, split into two 7-char halves).
 </p>
-{pagination_bar('lm-table', 'lm-toggle', domains)}
+{pagination_bar('lm-table', 'lm-toggle', domains, has_sensitive)}
 <div class="table-wrap">
   <table id="lm-table" data-search-cols="1,4">
     <thead>
@@ -1359,6 +1470,7 @@ def build_lm_section(analysis: dict, redacted: bool = False) -> str:
         <th>Type</th>
         <th>Status</th>
         <th>{lm_header}</th>
+        {sensitive_th}
       </tr>
     </thead>
     <tbody>
@@ -1432,7 +1544,9 @@ function _drawCharts() {{
 </script>"""
 
 
-def build_tab_bar(analysis: dict, reuse_cracked_count: int, cracked_account_count: int, has_cracked_potfile: bool) -> str:
+
+
+def build_tab_bar(analysis: dict, reuse_cracked_count: int, cracked_account_count: int, has_cracked_potfile: bool, has_sensitive: bool) -> str:
     reuse_label = "Password Reuse"
     if reuse_cracked_count:
         reuse_label += f' <span style="font-size:0.8em;color:var(--warn);">({reuse_cracked_count} Cracked)</span>'
@@ -1457,12 +1571,13 @@ def build_tab_bar(analysis: dict, reuse_cracked_count: int, cracked_account_coun
     return '<div class="tab-bar">\n' + '\n'.join(buttons) + '\n</div>'
 
 
-def write_html(accounts: list[dict], analysis: dict, cracked: dict[str, str], source_file: str, out_path: str, redacted: bool = False) -> None:
+def write_html(accounts: list[dict], analysis: dict, cracked: dict[str, str], has_sensitive: bool, source_file: str, out_path: str, redacted: bool = False) -> None:
     reused_account_count = sum(len(v) for v in analysis["reused"].values())
     cracked_account_count = sum(
         1 for a in accounts
         if a["nt_hash"].lower() in cracked and a["nt_hash"].lower() != BLANK_NT_HASH
     )
+    sensitive_count = len(analysis["sensitive_accounts"])
 
     # Number of reused hashes that have been cracked
     cracked_reuse_count = sum(
@@ -1479,6 +1594,20 @@ def write_html(accounts: list[dict], analysis: dict, cracked: dict[str, str], so
     else:
         cracked_card = ""
 
+    if has_sensitive:
+        cracked_sensitive_count = sum(
+            1 for a in analysis["sensitive_accounts"]
+            if a["nt_hash"].lower() in cracked and a["nt_hash"].lower() != BLANK_NT_HASH
+        )
+        sensitive_card = (
+            '  <div class="card red">\n'
+            '    <div class="label">Cracked Sensitive</div>\n'
+            f'    <div class="value">{cracked_sensitive_count}</div>\n'
+            '  </div>\n'
+        )
+    else:
+        sensitive_card = ""
+
     logo_img = f'  <img src="{_LOGO_DATA_URI}" alt="Logo" />\n'
 
     tab_bar = build_tab_bar(
@@ -1486,8 +1615,8 @@ def write_html(accounts: list[dict], analysis: dict, cracked: dict[str, str], so
         reuse_cracked_count=cracked_reuse_count,
         cracked_account_count=cracked_account_count,
         has_cracked_potfile=bool(cracked),
+        has_sensitive=has_sensitive,
     )
-
     html = HTML_TEMPLATE.format(
         source_file=Path(source_file).name,
         generated=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -1499,12 +1628,13 @@ def write_html(accounts: list[dict], analysis: dict, cracked: dict[str, str], so
         reused_hash_count=len(analysis["reused"]),
         reused_account_count=reused_account_count,
         cracked_card=cracked_card,
+        sensitive_card=sensitive_card,
         tab_bar=tab_bar,
         charts_section=build_charts_section(accounts, cracked),
-        reuse_section=build_reuse_section(analysis, cracked, redacted=redacted),
-        cracked_section=build_cracked_section(accounts, cracked, redacted=redacted),
-        blank_section=build_blank_section(analysis),
-        lm_section=build_lm_section(analysis, redacted=redacted),
+        reuse_section=build_reuse_section(analysis, cracked, has_sensitive, redacted=redacted),
+        cracked_section=build_cracked_section(accounts, cracked, has_sensitive, redacted=redacted),
+        blank_section=build_blank_section(analysis, has_sensitive),
+        lm_section=build_lm_section(analysis, has_sensitive, redacted=redacted),
         blank_count=len(analysis["blank_accounts"]),
         lm_count=len(analysis["lm_accounts"]),
         logo_img=logo_img,
@@ -1534,6 +1664,11 @@ def main() -> None:
         default=None,
         help="Path to a hashcat .potfile to match cracked passwords"
     )
+    parser.add_argument(
+        "-s", "--sensitive",
+        default=None,
+        help="Regex pattern or path to a file of patterns (one per line) to flag sensitive accounts"
+    )
     args = parser.parse_args()
 
     input_path = args.input
@@ -1558,16 +1693,24 @@ def main() -> None:
         matched = sum(1 for a in accounts if a["nt_hash"].lower() in cracked)
         print(f"[*] Potfile loaded: {len(cracked)} hashes, {matched} accounts matched.")
 
-    analysis = analyse(accounts)
+    sensitive_re = parse_sensitive(args.sensitive)
+    if sensitive_re:
+        print(f"[*] Sensitive pattern loaded.")
+
+    analysis = analyse(accounts, sensitive_re)
+    has_sensitive = sensitive_re is not None
+
+    if has_sensitive:
+        print(f"[*] Sensitive accounts matched: {len(analysis['sensitive_accounts'])}")
 
     print(f"[*] Writing HTML report            -> {html_path}")
-    write_html(accounts, analysis, cracked, input_path, html_path)
+    write_html(accounts, analysis, cracked, has_sensitive, input_path, html_path)
 
     print(f"[*] Writing HTML report (redacted) -> {html_redacted_path}")
-    write_html(accounts, analysis, cracked, input_path, html_redacted_path, redacted=True)
+    write_html(accounts, analysis, cracked, has_sensitive, input_path, html_redacted_path, redacted=True)
 
     print(f"[*] Writing CSV                    -> {csv_path}")
-    write_csv(accounts, analysis, cracked, csv_path)
+    write_csv(accounts, analysis, cracked, has_sensitive, csv_path)
 
     # Quick summary to stdout
     print()
@@ -1587,6 +1730,8 @@ def main() -> None:
         print(f"  {'Cracked accounts:':<28} {matched}")
     print(f"  {'Blank passwords:':<28} {len(analysis['blank_accounts'])}")
     print(f"  {'LM hashes present:':<28} {len(analysis['lm_accounts'])}")
+    if has_sensitive:
+        print(f"  {'Sensitive accounts:':<28} {len(analysis['sensitive_accounts'])}")
     print()
 
 
