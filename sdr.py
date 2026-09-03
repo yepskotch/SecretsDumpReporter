@@ -819,9 +819,40 @@ HTML_TEMPLATE = """\
       margin-bottom: 16px;
     }}
 
+    .chart-card {{
+      position: relative;
+    }}
+
     .chart-card canvas {{
       display: block;
       margin: 0 auto;
+    }}
+
+    .chart-tooltip {{
+      background: var(--bg3);
+      border: 1px solid var(--accent);
+      border-radius: 4px;
+      color: var(--text-head);
+      display: none;
+      font-size: 12px;
+      padding: 6px 9px;
+      pointer-events: none;
+      position: absolute;
+      white-space: nowrap;
+      z-index: 2;
+    }}
+
+    .chart-tooltip.visible {{
+      display: block;
+    }}
+
+    .chart-tooltip strong {{
+      color: var(--accent);
+    }}
+
+    body.light .chart-tooltip {{
+      background: #ffffff;
+      color: var(--text);
     }}
 
     .chart-legend {{
@@ -1024,7 +1055,6 @@ function drawBar(canvasId, data) {{
     ctx.fillText(v, padL - 6, y + 3);
   }});
 
-  // bars
   data.forEach((d, i) => {{
     const x  = padL + i * (chartW / data.length);
     const bh = (d.value / yMax) * chartH;
@@ -1036,6 +1066,48 @@ function drawBar(canvasId, data) {{
     ctx.textAlign = 'center';
     ctx.fillText(d.label, x + barW / 2 + 1, H - padB + 14);
   }});
+
+  canvas._barData = data;
+  canvas._barGeometry = {{ padL, padT, chartW, chartH, yMax, barW }};
+  if (!canvas._tooltipBound) {{
+    canvas.addEventListener('mousemove', event => {{
+      const tooltip = document.getElementById('bar-tooltip');
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = W / rect.width;
+      const scaleY = H / rect.height;
+      const x = (event.clientX - rect.left) * scaleX;
+      const y = (event.clientY - rect.top) * scaleY;
+      const geometry = canvas._barGeometry;
+      const index = Math.floor((x - geometry.padL) / (geometry.chartW / canvas._barData.length));
+      const item = canvas._barData[index];
+      if (!item) {{
+        tooltip.classList.remove('visible');
+        return;
+      }}
+      const barX = geometry.padL + index * (geometry.chartW / canvas._barData.length);
+      const barHeight = (item.value / geometry.yMax) * geometry.chartH;
+      const barY = geometry.padT + geometry.chartH - barHeight;
+      if (x < barX || x > barX + geometry.barW || y < barY || y > geometry.padT + geometry.chartH) {{
+        tooltip.classList.remove('visible');
+        return;
+      }}
+      tooltip.innerHTML = '<strong>Length: ' + item.label + '</strong><br>Unique passwords: ' + item.value;
+      tooltip.classList.add('visible');
+      const cardRect = tooltip.parentElement.getBoundingClientRect();
+      const canvasRect = canvas.getBoundingClientRect();
+      const barCenterX = canvasRect.left + (barX + geometry.barW / 2) / scaleX;
+      const barTopY = canvasRect.top + barY / scaleY;
+      const left = barCenterX - cardRect.left - tooltip.offsetWidth / 2;
+      const top = barTopY - cardRect.top - tooltip.offsetHeight - 8;
+      tooltip.style.left = Math.max(8, Math.min(left, cardRect.width - tooltip.offsetWidth - 8)) + 'px';
+      tooltip.style.top = Math.max(8, top) + 'px';
+    }});
+    canvas.addEventListener('mouseleave', () => {{
+      const tooltip = document.getElementById('bar-tooltip');
+      if (tooltip) tooltip.classList.remove('visible');
+    }});
+    canvas._tooltipBound = true;
+  }}
 }}
 
 // ---------------------------------------------------------- copy hash
@@ -1529,6 +1601,7 @@ def build_charts_section(accounts: list[dict], cracked: dict[str, str]) -> str:
   <div class="chart-card" style="flex:2; min-width:360px;">
     <h3>Cracked Password Lengths</h3>
     <canvas id="bar-chart" width="560" height="200"></canvas>
+    <div class="chart-tooltip" id="bar-tooltip"></div>
   </div>
 </div>
 <script>
