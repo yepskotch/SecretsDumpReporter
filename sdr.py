@@ -10,8 +10,10 @@ import csv
 import io
 import re
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime
+from html import escape
+from itertools import groupby
 from pathlib import Path
 
 def _get_version() -> str:
@@ -34,7 +36,26 @@ _VERSION = _get_version()
 #  Logo (hardcoded base64)                                                     #
 # --------------------------------------------------------------------------- #
 
-_LOGO_DATA_URI = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHgAAAB4CAYAAAA5ZDbSAAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAAGYktHRAD/AP8A/6C9p5MAAAAJcEhZcwAACxEAAAsRAX9kX5EAAAAHdElNRQfqCA0QBw4NzhnoAAAv0klEQVR42u2deZxdVZXvv/uce86d55rnqtSQVCYSEiBMMiui2CgoQiNtq88BQWltW1+3ovYb9LXaKC3Siq1PbRXRVkRQJgEZJZCQOanUPM9V99ad7z17vz9OVZGCAIFUkcRXv/pUAjn37rPP/p219tprr7U2LGMZy1jGMpaxjGUsYxnLWMYylrGMZSxjGScCxLHuwFLjK1hYoLsRUaBWIOoF1AgIKcgDowq6FKpbQf/jWMkVaOpr6Me664uCv0iCP0WBZnSSKI8GmzXE5Qp1eoFsTY6EP0fGKSkAAgemNPGkTbwTOo4DCv4gUb9Nozp1hPwHtGP9OEeFvziCb8ZCgQ5ii464Lk/qzSPsD/fyHEPsI8YwOVJILAQCHQduQkSppYr11LBRhqg6KNF+UkD9h0IMGkg+eYJK9F8UwV9FoqE8DrQPQOGzQ+yo2MrP6Rc7cDgkETNI0BHApTnR0VEo8qpA0koxmZ9mJp/EaUVYzUWs4x2Wl7JHJepzg4hnmpB8+AQk+S+G4Ftscn15tM/mSfzddn7ufpY78Th16jzVFBkRTM142e9LJUlaKQazI/SmBghadZzDx6hm0z4N8fE/If74FiQfOMFI/osg+DYsvGAk0P4hQfwfH+EW137tAZr99VQ4S9GFhi50lFKv2E5BFTA0g0QhyZ7EQVIZyYXcSDPn7zMR10rYap5gJJ84PX0ZfB/JDII82mU5sl95gtt9e/V7WBdcSbWrgpzMIdDQhYbT6cTn9xEIBPD7/Xi9XkyniUAgpSRtZdHQcOsuSswi4mqavfknKKWx2E/VigzqwSxi5j6+dKwf+4hxwkvw15EoqDEQd+7n96c8IL5Ga3AFVa4ypJJM5eOU+YuJRiJ4fV4cDsdL2rAsi0w6w8D4ELGZGH6HD4C8LLAtvgstU8RlfEW5KftSnsI/O9Dkp04Q2Tih1wA3IzERaIir4wxsfpL/S7knSqWrFKUUBWXhC3ipqakmGArOk6uUmv8F0HUdn99HZUUFhtdE1211bmoGq33NxPRunue/hI78GzeOtcYJJBcnNMEABVSNDlfv436RcYzS4KkFQGiCQNhPKBzEMIwF868QYv4XQGGTbuoGbp+H0rJSdF1HKonf4aXeU8Mu7mWC9joN3n09gpuQx/rRjwgnLMGfx8IAdMRFScZa9vNHKl1leHU3AEVFUbwBH5a0iZgn8xCi56R4Th41oZFTOXx+L6VlpWiahlJQ4SpFOlK08SgKLr0FqqLHegCOECcswWEEWZRLg4uG2O1IaENUucpRShEIBohGo+StPJa05o0oS1oAKKmQlrT/VpJcITf/ubzMIZUkGAwQiUZQKDy6i1JnlHaeIsVUE3C6DnzxBJDiE5ZgHdDQKiVqYxfP4DOduHUXTpdJcXERmqYhUWSsLNl8lpyVByXQNEG4OkjtpkpKm6KYpoGGRraQYyabJJ3LIGZlOhIJ4/V6bCl2lhETfUzQ6RRwdg+WdiLMxCcswcLu/IYUk9X97CBqRHBoDqLRKIZhAAqHppPMp7CUxNQMimpDrLuyGf+5TsYqR/Cd6+KUD62lYlUJLt0JKJwOJ4oXjK+i4iI0XcPv8OJwKPrZiYLNpehR/7EehCOA4+ibeOPxRSz2ILW16OeN0W4mxRgtxko8Xg8+vz3smXwWpRRrS1bicbqpOa2cfE2G7/zqRzz3xG4yySxOj5PTz9vAtX9zOdH6EAce7GaNvpKJ5BQRTwhDN3C73fgDfqwpi7ARoCf/HCdzZZOOuxnU2LEei1fDCSnBQQQr0UslnNnLNpwOQcgMEImG0XWNTCHLWHKCsDtEKBCk6ZIank/v5Iufv5nH7nuWbCKPpnRyyTwP3f0Un/27r9Dr6mPdFc34vF4CTj/DyTGyVg5N0wiFghgOB1EjwjhdxBkM67DFieB8Csd6OF4RSyLBX0WhozCgQcJ7FYQBddQNz0KBElCWJdHUz07CRpCQP4jH7SFbyDKUGKbUU0Iw7KfyvCJ++eTd3P/rx5EFhQPHfFcEAgcOhnom+MoXbuOjn76K0967iR2/OIBCMZQYptJfjtvtxuPxEMoGkHong9YeilhxbQZVdgmaumTxjS0LuD+JesQ8yi3LJSHYQrEaQRvqg8Dn7MF84c/FgABiDDJFL2tcdQSCQSwsemMDlHqKKSqKUHx2kB/f+0sef3AbmtLQ5gdqYT90NDIzWb791R+T+0SWMy/fws472sjLPN3TfTSEawmGQ8Rm4ngcTvqtHbRyyRrQ1yyuoaXmpUDBWR54BzB+NC0uCcEmsA+FBgMCLIHQFZICCSQF27l4lNDR6Wcb6FlKfEW4PS66p3oImAGKIhHCp/m4/Vc/Y/uTe9DQ5y3jl4OGRi5l8b2b78DxaYPNf7WRXb86SM7K0TXVQ32wFq/bQyQRYjh7gDh9mAQPoeT1Q9jeOBx40TBQKASMaJA52vaXzNL/F1ttlWhwh0CcA3me5nskSruoWFFsD8xR9F0WFNv3bMUt4cLGs0maaSxZoLmsiZIzQ/zkvl/xzGO70NFf00NKJC6/yY2f+wDNeiN7f99Bb7zP9moV/Ozvb+PZ2B5OajqFcCTK0c48QhckhjOMd6Q5R30CL2WAmrTgSuCBIPCh401FA/hQxBGjGtwMaqOGEShnHQdVD5eedQ3rr3Hjr5z1ML3GMdJ0jfZ9PXzgsscoTVeT0bLEMnHWlbdScmqIOx/9LVsf2/mayQVbkjMzOb799R/xT/98PXWnVmI9KTkw1UbBKhByBnBoGqe/r5EPXf9epGW9vgESkIkpOu7W+Omtv0SqLF5K5i79pxP1iEQcFbmwhAR/FJ2bkQjUgwpxt4Kr6ziVvtHnuPdrO0g89hZy5z3MqLkf8Rp3ZjRN0Hmgn/REFl/ITX9ykLVlqyk/uZj7dj/CEw9tOyK1/LLtoxGbSHDLN37IF77wCcrGo1gHGtg+vAtD6UT0IPf/5nGwXq8CVbgJUrL97bTdN0VbqoOz+SigoVAHgX+3EPmuRTDelnQdHEUxikhqcAuocwVGxRou4WnrB9Q+uZmBJ+Fufk6e7Otqv9QsYsKaZn1oDQ3rq9k5s5v7734MIbXXTe4cdHR62ge59bYf8emPfYTEWIqWQiNPx5/Da3jZu/Ugu7ceeF1tKyxO5grOxWAXv2MFpxKkCgtlKfh+Ofm9Ixh8cxHoWdJ18DXoWEAOtVXCDyQQoZESWtjLPTRyBqs4FwE4XuOPjo4lJJXRClY2NTIWGuWOn92DlVNHTe4cDTo6257cy6/v/z3Nb60j6o3QWtnCDInZHuivud8agiJq2My7maSNOCOs4Jw5Wf2zBj8axFCfXCRqltzR8Rk0NIQEbge1XQGtXMwge5igh81cRYBi1GtURxJFcSjKutpV+DY4uePXd5OcTqMtmt0oZq1bjd/+4kH2Tx+k9tRyqv0VtJQ3IsVrV862dSzYyOUEKGMHv2UlF2ASQKGSCr6Zg6Hg4rkM3hhPVhQYhm4F/65QOS/FrOQ89nAPEepYz9vnB+BIIJGEPQHOqD2FutMruffph+jY14e+BFEWAkE2k+f2W3+OtgKCFX7Wla5iRXHda17uKSSVrGU1F9POY+gYVHMKCtDgdybc6wE+uIjP8YYQ/LdoVAAC7hTwRwnUczZZkgywnXW8gyLqj0iKFQpNaJxcuZ6W1gZ6VC8P/+HpWXIX780/9H6mMJnqi/PL395D/TkVuEwXZ9WdQsjtRx6h5lEoDFxs5kpA0ckTrOMdaBiAGlVwawESmUXu/xvmi661B39ydtk05cBNK29mF/fgxMtm3oOO41WlWKGoCpWzrqqVki1hfnfvQ5hZJxraEtBrQ9c0mv31PHbfVtqmO6naUErUHWFzzQZ0oR2R5pFYrOA0GtjCHv5AhFqiNCEBBT/UUU8C/P0iU/KGEfxOdAzAQD2qwS8VUMkGApSwjwdo4QLq2Izk5deVCoWu6awvX03TplraY120Pd9NtaccbT78ZvFp1oVOiTOK1/Ly0/+8i9A6H6bHYHVJC9WRyiN4KSV+opzKNcQZZoCdtHKx7a9C7VFwex5RuHEJ6HhDd5OuRyOFyBTgVoXqAZ01vJ0eniVLnE28B7dtcLzMQCkinhANRTWUnBTmoQeeoJC3CBp+fIaXsBlEIBaVZIWiyAzj0d1EzCAHd3ez7eAuylYXYWoGJ1WstmOuX+GeCsUaLqaIRnZyF02cjY8yFCoP3DYOB91LNOZv+HahG8VacjuA70mQwdmcoN3cQzUbWcm5ryjFALqhYzkt+nuHkbPpJ1WuMqJmiCJneNEIlkiChp8VXjuQLy0zSCV5+qntlKyNgIBibxFOh/kKbVgUUccG3skwe8iQoIGzkfbgP+5A/bwM+NgSUfGGE3wdOnsxlYAfCtQzCmjhAkY4yBhtbOJKQpQf1ngRCCaSU+zpbyPdl6N5VR0WBXpSA5Q6iygyI6zyNxIwjtz4eTnMkXtSsBWP5qI92cNQxt7fj5SFQNn9SWQT5K38YdtQKDQ0TuZyCmR5jjtZxYUYeAEVA/61gBhfSm/TMdnwN1AUEAMCvgMq7SbCGi5mF78jSAUbuWyBqlWzP2DnED3d8xxP/W47bzv9AupbqhjLTXAg0UnIESDk8LM+sBK/w/u6dq0UCokkaoY5ObQGh9B5Pr6X/TMd5FWeLRecxHsufRvtD/aRyWd4tm8HeVk4rHNFYVHLyTRyBo9wK+N0UUSjHaYLv1aoBwCuW0Iajkl4/r18mYvtyOIuAWsVYmWAcnp4GoFgBWfSx3ZmGGXO4aALjRZ/PUrBZG6a3tEBinPFnH3+ZkYSo7QP9JIoJPEbPsJGkIDhZyI3SV4VjtizNfcSlbtKWBNoZjIXY2dsP6O5cfwRD5e//2KuvuSdDPxhgt6DAzzc+SRtY52zPRQvacuFj/O5gUn6+DM/4xSupIbTUKg+CZ9RiJ5qFHfy5b8sggHu40ucz01ZAcPAJToOr4cgu7mHUhrpYztTDODRPaz0ryCjcjT66ygLFjE8M8Z0Lk77QDeehIcLzjyLQLWX/f3t9E0NI5EUOcMYmsFodgLgVUmeW1/XeispcxXTkejlYLIb6ZSc+eZNfORjf81q10o67u1nx/49PNDxJzone+bJPXTet/9fUsN6WrmAh/gWAUp5E9eh41YCbq5A/kwh1LVLTMExTbB5K19Ah0GFKFeI0/yUMM5BDvAgA+whT44iZ5jV/mam8jGEQ/DOay/GWTAYGR4nlp/hwHAHo90TnFS1hi1nbyDjzHBgtIvuqX4ShRR5lX9VghV2mkqluwwU7J/pIOPKsuHMVv72I+/m4o3nM/XYDM8/upc/HXyap3qeRbd0Grw15GWBjLQ3S5yaiVJy3iWZIU4f25mkj3P4KCWsRqC26/DZJGL642/ADHlMCX47NyERUkAvcCGIaJhyengGAxcxRqhylVFsRtAQ9M4McubZmzjzLafgy3gRCchksvTHB9lxcC+poSxbVm1iy5kb0MKC4elRUsnMPL2vRLKmNOL5BNlgljPfcjIf/PB7uHDd2Vi7Yeu9O3l455M83r2VZCpJa6CJlYEGQnqAwcwISStFmbOYDaHVSBSx/AwCQYEcMYZo4Rw2cw0CR0bATSnEoz4Uv1tC1XxcEHwvX+ZSbmIXYqzEjvS5wEVAy5MmwTB5MhS7AwQNPy7dyURuitREmspoBUxr1JZVEioECYkAKOidHGD7/j0khtJsaljP+RedQfmKYnIqSzKZIpvLLbCuJRILieF0ULmylIuvfBP/7UNXcWr1yUw8FeOp3z/PI9ueZPvgLpRUrC9p5ZTqjTSU1+I0nfRO9dOR7MPjcHNSsJWAw4fX4WYoM0pBWYDCR5TzuRE/lSjUgwr+pwMy179BQ39cBOd/3XbYFWuIX4A4J0eMh/k6aaaYMjrYFF6Lz+VhLDVJT3KAS8+/kGJvMTPDSRSKbCZLKpliOhljLDHJWHqCnMpTWlTM6rXN1LZWkvfm6RrtZf++Dno6+smkspRXl3DSqa1s3LCGCl8Z6a4c+5/qoL2tm6lMDDQIeYKU+ooJuv04dB0F5HM5uvt6eWL4WabzM6wPrqTMWQxATuZ5YvI5koUUCskWruEMPoJCm1Co9+bhgToU7/n/ieBbsEgjcMAVwPd1hL+Xp9nGHUwxSNijccn556OE4v6HHkNzaly4+SxMy4WyZlNBZ9ec+XyedDpNIplkJj3DRGoKy6moq6imYVU1tRsrcZWY6F4dr+Em2Zum88k+Bg+MMj4xaaeS+rz43F5Mw0QTYj77EOxc4sHBQZ4d2slobpJWfyPFRmTeSBvOjvHc9G4sVSBKLe/iXwhQjUJ9x4H6pELkbngDV6fHBcFgV8eR4FWI2wXiSkGex7mVSboZEnu5aPUZXHjlWTx591Ye3/EcQbefk2vWEQlHkEiSmRQ5mcNtuPE6PQigYFlks1kGZ0bwCDfT8RiaphGNhvEHPCSmkmQSOQzDwOl1Ei8kqA5XzFvFAoFUkkw+iyY0HJrO6MgoI5NjDGfHKDGj+E0fhmmQy+XIFXI8G9vFWHYSDY0L+CTruRyJ6hDwLmDHYm3kHymOmzT1d3ATBURewABwiYbu9xFlgOfRMBlO9FBBBSvPbERPaXSP9DM5M03Q9OH1eDEdBiAYTowyPDOCVBJDNzBNk0QuSVVRBUXhCCFfEF04kDmFy+kiGAri8/vQdEEqlybosX3h2XyWyfQ0o4lxdE3DY3qYnJhkamoap2FS5i+hOFpESUkxLpeTZCJFb3qQ7uQAEos6TuZMPozAqYCv/RDxy/XYy8P/Lwm+hy/zNm7CQA1JRBjEWR4ixBkkxQRj+RGMnCBohahcUUbYDDA6Os5kfBoXTtxuN6ZuEHYFcepOJtPT9E730z89iKEZuA03QoFDd2AYBoZh4NActrQqhZSS8cQksXSc3qkBptLTGLpBqa8Yn9PLnPvJ5/cRCUcIh0N4PR7SqTQjQ6PEMnF2zRwgp3K48HIu1xGlCYV6CvjH9TDzqWPgODyuks+uR+NmpAX8ANSlCrGmlUsYpY260mYS5QmEF1ROUNtQQ3FxEdPxGIWCha/YhdPpAhQRgtSKKgpWnqGZEYQQDKYHSBWSBI0wQT2Ax2Hv36QLGaatGLou8PpcaGjU+6sJOP3ommN27rXn3wghe4Nvtr/JZAJLFYjUB20v2qiXRPcMzeosajgVBSkB/6Zg0Fiy3epXxnFFMICOYhStPYy6FdQ3PRQbmyvfxoXfdrHmtAZM4UDT5qI37JWtnDWA5rL4bdjXUbaPSSLJFDJIac+tmrClSc46JhyajtPhRNd0O/lpTmRf1kxRWJZ8wfgSFv39Q/yPj36Pxq1XoGGiUPc5UPcAvFHLohfjuDGyDsVsVkRYh58LxEX5qk6GttyB1A+XyfdKJLwevP72lLDw7txAyZ63A9ooqHcpxOM3Il9z7Pdi4biTYAAXihxiSsC3gM30l4Sfu3Oc/Ty6JIF1iwGJIkgpV3Alwg5g/4mGetqCY0YuHKcEX4/Ot7DQ4KEC/NrE97ency3D7CVNDHHcpTXb6/BTuYJiWpCovQK+KxEFzzGae+dwvI3UPG5AJ4/IKLhVQU8ZaziJS4Glibs6GkgsqljLat6GQljA7e2IAwHgI8dY4xy3BNudU2wgsU2hvqfQ1Douo4TG1xwk/3I4NJDgaNpw4uUUrsJNBGUHFf6kGcUHjoPhPfY9eAV8Ap1t+JSCH0vUNj9lbOIK9Nkc2tcKhcKigEV+QdyXxMIij0XhNbcrsWjmTdRyGhLiAm6xYCx8nGiZ43IOPhRBYBLR60D9m4Tbmjnf2cGT7ONh9CPs/pykOvFQShNltOCnBBMvIMiTJM4YIxxgmDayJA8bpfFiSCQhytjElWg4UajfKtQDAsH7jhNj8Lgn+AO28wMB/6VQl+l4Lt3ElfSxkxRTr2pwKRSaJmgJr2FD9j0UJzdjKB+HWwoVRIIxz3M8Y/yYg7F9s1XwxMu2a+cZvYsimrFQAwL+TSCSJscPjnuCAfIodEQcuBnYUsra4nW8laf4CfDKq1aFoi5Yw0WtW3DKOFZ8GyoRQqW9YM0WCNcLCFcC3RejMjjNBfIUZnZNMJQYeQWCJZWsppWLkfbi+QcR5NYZBNcdJ9ILJwjBf4/ON5Ao1BMC7gTtY+u5jHaeZIzOV11nei0348NjBMJZXJEptCLdzoRQs+QJe8vRsgokUlliU3GC+Bhi5DCt2bO0A5NNvBsPRRRQOyT8xyiaXOzUk6PFCUEwwN+h8Q1kTsGtoC70U9F0Glfze76KxctHTgoEvelBwpMBQokEpmlgmCYOwzHrrrQ3GvL5Avlcnnw+z2R2moHMy0mvQFKghbNo4Cwk5DW4zQVdry+NfWlx/OiSI8BVfIFetDEvGCAuCFGhjdPOBN3wojjqOSgUGZljLDdBVuYoWBb5bI50OkMqlSKZSpFIp0ikE4xnpuhJ9XMg2UnKSr9MrLPES5gLuBE/VYC6T4cvK8i80Xu9R4ITRoIBrkXnm3Z4z88U/JUD71mbeS/97KLgSOF3+EjkkvicXtK5DEpTuDUX8WyCtJXlYKKbLtGPSzMxdRNd2O+3pSyyVo6szFJQ1ita0ArFai6ihNVImFJwi4TppcttPDqcUBIMdqitRCQ0SCnEW/2UGlliDOl7OK1sI4Z0EPYFWeGuYaIQ45Ti9RQKeabycTQ0JJK8KpC2MqSsNCkrTdrKUFCF+bCflyNXYhGlmvP4JE5CgPqJjrpVQ1g3HqdDefzplFfBDeiznVb3gLpboXES7ySYr+FAvJ06fxWjyXFcLhcRPUhPZoCmYD1e3T2/tJkrzXDoz6ute1/IM7qCoB1j1QPcKhHZK4/jepUnHMEAn0DDQiQkfFOhhvxUsJn3MByfJClSVBgl9KQGaPTXMpoYB0NQ5606qnsqJNWcRAsXIkEC3/0NEzsKKMo4nla+C3FCEgx2YICO2qrgPyXQxLnUyk3si7VT7islnU1TMCTlRgkHE91U+ysJOHxYWMgj/DnUaDNwsYl34ySEsrMi/+87iKrPHKeqeQ4nlJF1KD5hF1or6HAbqLcY+Nacy8d5KPENJhBIS5LNZKjzVDKYHUVXGmuDLUzl4ogj2M9XwFBmhKlcfNbffBa1nDYXhvNtCQM1x3oQjgBLSvA37T1dVwFRA2LR9dhsUI3UUfdJWB2iTqxWF3Ng5kFSAiYdU0iHxKu5mcpMIwSEjYCtYMULqSyaEIjZAv1zFWkzMkuP7EchCVDCZq5Cw4lE7dCgXUesHgDxr0tgPUtUJo/qBXKfPUoNsaTFSJsR9KJuKCA/LSkYLEUZHPsxDCAqEKJAkj/yDQqkmGSApJgiSxIfEQzlxoiAq2w2kH32DcnFFJlRkKpAWkwjEDiVn5SKkyfDaVzNFj40V1Njxv5dirETgBICR0ZD+x9BxPd7Udx0PBYjFUA7hB2Iq/bzh+oDPHxIvebFhTrkT4FgmkEssgQoIqMSWFg4cOEmiNNUBIrnxlKBgKQEOSywyBBX42jo+AmQI4dFnn528jv+aW5O9gvEkhzXYNfL0jiV91FK6+mjWD/0oL3Oaqc2lozgWcVSbZGrb+dxDvAI2hs05c/lEo7TN7sE0hinD+hFDYMaPvSzL/5bQ2IxysH5nao+dr4hUSS2lyzEFt6PgI4AujVxlPddshGfldWmFDOhKfrRMdDecItTO+S/Xpv2OHQD440KmpNYBKnAR0lWwp4cin86HssJfwWJjkDC6gRjZoLxV/AO2VUxXpAQMXtkzgseJcULwTXaYRwScvbqXA7wod+TC9pm3slxuLZfCa/etjjEXSJetk8vvueh1xWKCDU48U0pOLgYOmNJCDaALNI00Fqn6SfDS20ShUIKSbgoQGV9GZGiEEII0qk0UxMzjPaPMzOZBMB0GRRXRNF1jenxOPGpxPyASSSBiJ9wNIBSirGBSTLpLBKJ2++israUorIIbo+bXDbLxOgUfR1DJOMZNAS6rlFcGcV0vnLugVWwGO0fp5C319Eur5PKulJKyqM4Z3OThvvGGO4ZwypIQkV+gmG//b2BCfK5wjyJmq5RUhnFdBkkYykmR2LzYfzFNKBjdGZRA8ctwfYmnAgLaBqnA4vCgvAahcL0Orj8/RdzxTWXUN9QjdvrQghBIV8gnc7y/W/fwS1f/hEAJ52xiq98+x8wDIP/+blbuOcXj+CYLXvo9jv54s03cNb5p7Bj2z4+88H/TSqdYstFG/nQJ9/L2vUtBII+HA4HVsEikUixfetuvvLfb6NtVxflNSV868c3UVldhpo95/DFoe+arrFvdwef+OsvEZuMs+HMVj7yqb9mw+bVBIN+dIeOVbDYtnU3H7/qJiZHYnz0s1dz2ZVvpqOth+uu+gKTw7F5gsvrirnlJ1+ioqqEH9x6J7f975/OngBjUkIzArZ/GhH7+iLM+0tC8KzaqS2QqxmhbcE1hUI3NT72uWu47tPvw+k0SaczzMQSSEuhGzoul5Op8el5Fde6vonGljpi0zOMDk/OD7+FxUV/dSZvu/x8BIJ7fvUQoyMTnHbOSXzju/9EdW0F2WyO2PQMSioCQS8lpVHe/LY3MdQ/yj9+9OvUNJTTurYJf8A7n4YihHjJaaXP/Xk3sekZVm9q4hvf+zxNK+spFArEpmfI5wq43E5SiTTJeBp/yMvmLesoryxh9442ErHUvMaxkNS3VLH2pGZ0h4OhgTEsJA40XPgJUakk7PzmIhl1i07wPyLRAQktCSbCY3QtiJuykJx+7gb+9mPvxuk0eeTBp/iPb/+Cvo5hrIJdTsEX8NDbNmhnMWiKltUrABgdHmegexgNgURSUhnl/R9/N263i7vuvJ9773yEQMDLx//hWqprKxjsH+H/fOk77HjmALIgWXdKM1/8P39HtDhMS+sKvD4P/V3DfO76rwLg8ppc96lrqV9RzYE9Hfz7t35KPldAExoHdnViOg0+9plraFpZz9joJLf8yw946uHtZNN53F4nuXSeTCpL9YpyqusqANi74yDZdO6QjAzFqrWNOF1OJiem6djfgzZblSdEJV6K4goOAMSPR4K9QBTBOKyOMainmFxgmJimg3defTGhcICOth4+/4mv0763b36PyP7cnJEF7oCb5lV1APR0DTA1Hps1YiRX/M3FbNy8huHBUb7/rTtIJNO86aLNnHL6egB+eNud3HH7vejYpRcGB4e49iOXEy0OAwJN0+jrHKancxCJpK65khs/90EAnnpsGz/73t3zlr9Cccb5G3nTBaehlOJ73/opt3/9F2jqUCvXVsG1KyoJR4IUCgXa9nYd4tO201fXbmgBYGRonMHe0fmySyU0YuIdKaB6BPDlRfAbLDrBCuhAOkNoqyfopkBuXoIVitLqIjZvWQfAn/74DN37BzE4/JnaFhbVdWU0NNpe370720mnsggEqzY28L7/9i6EEPzsB3ex/cl9GOicfeGp+AM+BvqGuf+ux2YL79vFQnXNQNftR45Nx8jlcrahhYMCBRqba4kWhVFKsXt7GxoaxuwQSSTnvmULoXCAns5+7vnlw2hKX/BiAuSRNLfW43SZTIxP09XWu+AFD0Z8rGi2a192tfcRm4jPrxtKaERAp0SNL5ajbNFdSybgRiuRyOZxOhdUtbGQ1DdXU1ZZjGVJdj23H0vKl30UiaRxVR2hSADLsti386CtBZwG1370cqpqytm+dTc/+e5dKKnwhbxsPHWN/TLsamega2R+/atQ+P0+otEQAKNDE+SzhUMGH5pa63G5nczEE+zf3bHgxfRHvJxyhq0Zdm4/wFD32EuOD7AlVKNlTQMAI4NjDPWNHXIPSVlVMWWV9vE5u58/QC6fnx03DxG7qva+buLJxeJjSQh2wIo8qYoJul+y/mtcWYvb7SKZSNF1sP8V31OBYOWaFei6zvRUnPZ9PUgkp11wEm+//ALSqQzf/ebPGO61T38rry1hRZMt7Tuf20c6mV2wnCqvLiY8S3B31wCWsub7ZTh0VrbaxAwP2qpTO+S7VQ1l85L3/NY9ZLO5w5YvDER8NK+y2+nq6GN6cuaQPtjPHwoHyGXz7H6+jTm17qeYIBUWsLOJoDoq/+RSEfxVJBogYH2SCd80gwsGQUNQt8LeeM9kskxPx7Fma1W92NWgUDidJs2t9QD0dQ/R2z1IKOTnQzdcSTDk54F7H+PBu55AR0ciaWqtI1oUJpvNsef5tgXFSBWK+qZqfH4PuVye7oN9HKoGfQEvDXOqs6OP+OTCtfZJm1uJREMkEyl2bWs73OMjkdSsqKS6thywp5RMNjPvFAFoXd+IYTgYG52g60DfbKV6SZhKXIRiEvYo4GgOpDwUizoHS2AaqQfR10wzQJKp+UFU2AcuR4rDAITCAT5wwxXc+1+P0H1wgLHBCVKJDBr6rFWpCEb98y/E0NAIvrCLS991IWeddyqD/SN8519+TDqRnT3hTHDyqWvRHTqjIxN0HOhdoEIFgqZV9QghiMcS9HQMLJDQksoIVTVlALTt7Zy3fBUKh+6YV8/DQ+N0Hug9rOtTzc6/gaCPQr7A4MAQxeURHA4HKIXhcrB6fbP9wvYMMT48NbsigCj1OHANWtC3mJwsKsEuADQ/0DJBFwWy81aoACwpmYnNAGCaBle//zLeeeXFTE7E6O7o44F7H+dXP/gD8fEECkVFTQml5UUAnH7WJn71wL8TLQqjaYKf/sdv2L314KwEKHwBD+tOXglAd2c/Q72jC+Zfl8tJ00pbQgd6hxnqH1twvaGllmhRiFwuz57nDy6wfINhH00r6wDoOtjL5Oj0YV2vGhor16xA0zSUUnz68x/m+r9//wvXNUFpuV0wreNAD8mZNAA6DoppQMC+FHLitR/I9wYRbA+IKFPI2jE6ZtM89UMv8p/fvQtJgfKqIgIhL06XiQA8QZ23XXEmoyMj3P2jR1FApDRAR+dBOrsFDl1HCMH45AjZTJZH7n8KqcAxu2QKhH1Mx8d5/vntPHz/46Rmsi+E56HwhTykczM8v2M7D933ZxJTqQX9DkTd7N67i9hUgn072xcYWMGIl9GJYbY/n+Wh+x4jm8nNnkN86KMpTJeBcOR5bttzKKVwOBZuUiipGJscRgjBk3/airQkGhombiLUAOwIouXXLyIfi0qw7cGiIUuiaJzulySG6ejsfbadm3bcgjfgIlIapLapnHWbG1nRUoXDcFBRE0XTNZSliJb6GRoaJBZL8Kc/bMPlMTnzgg2YpoEv4J5/zxWKcLGf+MwU6a4Ztm/d86Lgd4iUBEjnknR1dbP9md1IKReo4FDUQ19fH31dI4wMjB+i3hWR0gCx+CTxmSn27GjjcEsYBfiCHoQh6evtpbNtgH3bu+YHRklFbXM5qzesIJ+z18f29yReovgpy0nYK1CcvYim0aIRfPNsHIwGqxKMel5sYM1BQ0PlFTMTaeITKTr29tO5r58bv/TXuANupGUPhsPpoKahArfHTW/nKA/95lmCER+nv2kD3oiXsqqiBe1X1JbgD/rJZnKMDU2/xL6trCshFPKTyxYY6X/BNgDwBt3UNlTgdruJTSZJzyxMQqmsLcXn95GcSTExHDvs6WoKRbQ0RHFJBJfLyc5n2rnvV0/NTwMSyXs/+hZ8Xi9jySkm5n3TFiU04iY0JqFtscNEFu1VSaKYQjoEbBin87A7SHOYOxBZR7PdELoDl9uF02kyOR7HUhJ/yENVbSmmaTI+PE0hXSCbypHNFXC5nJRVF6M57PlXExpV9aW43W6ymQLT4zMc6lzQhEZDSzUej4d0KsfY0NR8zySK4oowJeVRTNNkuH+SgmXNbwzouk5lbSlul4tUIkdsIvkyW5+KmsYygiE/SgmG+ybR0WbPONTwetysXFOP0+UkNpkkNj5npQvKWImOo0uiBhf7sPhFI9hA4EEEFawc5SAS61UTqOcIKK2IEAz50XUHw30TSCQVtcUUl0YxHCZDfeNIJNlUnlQ8g9PppLyiGKfbTv80XA4qq0txuZwkYrbD/9B7u/xOGldV43Q5GR+ZXrAEUihqGsoJBHxoQqevY3hB/5wek6raUpwuJ9MTM6RmDaOXvLRCvPASJXOMDkwsuEe4OEBFVQlO08lw3wTZTA6wsxSLqAc4kEbOLHYC2yISDCaiJk+2dpyuI/6eAOqaKvH5vBRyFkN9ttOiYWU1gaAPTdMY6LHPbsjn8sSmk5iGSWlFEd6gB4nE63dTXlmM03QyPZkgl3nhFJS5l6W2vhKHw6DzwAC5TP6FiEoETatr54np6xqeV8EKhcfvorjUlu7pqQT53EuzGBQK021Q31RlvwiTCeJTL0i6RFFeU0wkGkJ3OOg+ODi7Rld4CBKgAgV7g2gF43gk+B0odJusVVli4WkGjlh6nR6TtRtbcLvdjAxOMtI3gakZtKxpwOVykYinGei2vUpSKabG4himSTQapqQ8goXEH/YSLQ5jmibxqQRWQS6QnlPPWU+0OIy0FHu2tS+4v8vrpKGpGpfLxcR4jNhEYkHfvT4PwVAA0zBJJ7LIw2T9z82/tXUVmIbJcP84mdRCT1d9cxX+gA+rIOnrHplf6wcow0skpWCvgsNmJB9zgk9BEbUNrDUzjOgJJhZY0HOenAIWhQU/FutPb2H9yStxOAyef+YAiXgSb9BNQ2MVLpeLoYFxpsfj83Pi+Ng0hsNBIOSnqrbc3vT3uvD5vZhOJ26vGykkBQrkyVNWE+XcN5+Ky+Wit3OIzn39C9a/oaif6rpyTKeTod4xsqncgn6bpoHH48bpdBItCSF0FvR/7tlqGyvsKcUw6O0cmvdc2fO4xoqVNbg9HhLxNBPD08wWSyNKLSa+cQkdCvjaInuPF8WKNoEBpNuF1jpJHzle8JUrFMIhuPTq8ygqDTM5GiOdzqDpOrUryjnv4tOIFkfo7xnmsfueRQHFZREqq8swDZPezmHyuQIO7Mqw40NTCKHjcbtoXFmDQJDPFdA1HcNhcO6bT2VmOsHI4CQ+v5szLziZltZ6CgXJfb95nFQiPb+GtVVnCSVlRTh0h02MkvPXBYJcNocQGoZhct5btpBN5+luH0AIDa/PzZ/+sJWBvhGaVtXh83lJJTP0tA8t1AIBD43NtbhcToYHJkhMJ2fNK41SmtHR23OooUVldjEJthvRihU0j9GOhTUfoqOAQNjLNR++jMaWGvL5Akra8ci6roGCifFpbv/WL+hpG0QAtY2VlJYXo+saPQcH5++jIRgbnsTKSzxeDytaajEdBsO947Tt7eXs8zdRV1/FDZ+9FiklmqahaRrZbI67fnEfD//umfm1r02AorG1lmhRhFQyTW/HEIda/gLB6NAkbXu6Oe8tp+FyufjA9e9GWhJd1xgeHOfJh7Zh6A5a1zfh8/sY7HshKGHuJSqrjNLQVIPL6aKrrZ9cNo+GhgMXUdvA2h5EJKaXIDT3qAn+1OwGg4K6AunyUV7siLeXGjuf3c9MPEnA78N02aZEYiZF+4FufnvHQzz76O75/F2hCbb9eS+pZJq23Z3z6l4gmBqL8+gDW6mpL2ewfxTTNEjG0/zb//oxUxMxVq5ZgT/gtQP4khkG+kd49IE/84dfPkY2mVvgQxYIZEGy9YldjI9O0ts+9BL/dSaR5dtf+QnxWILWdU34/R6kVMRiCZ56dBvjg1O4PU6mxmM8/afn2fbM3hfN4wrTZbJ3RzuarrH96X3z/+4hSJAKKWFnEsWnlyAx4KjX1f9qlzhCID4UZ+C2n/FxbYaRl8zBmqHh8jhxuZ0YLvu9yiSzzEwnKOSt+VBWhUI3NDRDA6UoZOSCckYKhcOl27lEEgoZe2NNItEMDX/Qi9vrBCHIpfMk4kmy6dxhE7sVCodTR+gCJRVWVh62dNJc24GQD5fXiZKK1Eya1EwaWVAIIXC4dBAgCxIrt9DI0xwaummPh5WxkFIhsahlI+/ia5ManktAPX3jnC9wEXHUElwA/si4eCvFq6fo01JMHLaTMi9JxdIkY4f6gO1h0BcEmQusvMTKyxd96pB7Zhbuls7FOqu8IjaeIDY+s+Day1WoFQgK2Ze29WLMtT09NgNj8QWfm6sYn08XDtvGnJaQhRc/j6KEJgw8g3lU31xri41FmYPPp8gDtI7TSYEc2iuc5H34wiavfur3kV4/3EC9lrSTV/rskbZ9JP3V0CmzQ2Q7LNTkkZ6v+Fpx1ATP2pvFFtaKcTpflJ+wjMPBPrjST5R6FOxqQUvvXKLcp6MmeDaCw22BazVvpY5Tlsl9FdgVA9yEqUsr2NaH4vNLlHm5KCpaQ3WA9sUqNpyxTO6RQdll9vbpqIeXMm9xUdj4hl1lRlhomlqW31eFnRqjcCKlBerGE7eSxjKWsYxlLGMZy1jGMpaxjGUsYxnLWMYylrGMZSxjGfw/8kyGNL+Bd70AAAAASUVORK5CYII="
+# Keep in sync with logo-password-audit.svg. Embedding keeps reports self-contained.
+_LOGO_DATA_URI = (
+    "data:image/svg+xml;base64,"
+    "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjgg"
+    "MTI4IiByb2xlPSJpbWciIGFyaWEtbGFiZWxsZWRieT0idGl0bGUgZGVzY3JpcHRpb24iPgogIDx0"
+    "aXRsZSBpZD0idGl0bGUiPlNlY3JldHNEdW1wIFJlcG9ydGVyPC90aXRsZT4KICA8ZGVzYyBpZD0i"
+    "ZGVzY3JpcHRpb24iPkEgZm9sZGVkIHJlcG9ydCBwYWdlIGZyYW1pbmcgYW4gb3BlbiBwYWRsb2Nr"
+    "IHdpdGggdGhyZWUgcGFzc3dvcmQgZG90cy48L2Rlc2M+CiAgPHJlY3QgeD0iMiIgeT0iMiIgd2lk"
+    "dGg9IjEyNCIgaGVpZ2h0PSIxMjQiIHJ4PSIyMyIgZmlsbD0iIzBkMTcyOCIvPgogIDxwYXRoIGQ9"
+    "Ik0zNSAxOWg0MWwyMiAyMnY2MmE2IDYgMCAwIDEtNiA2SDM1YTYgNiAwIDAgMS02LTZWMjVhNiA2"
+    "IDAgMCAxIDYtNlogTTc2IDE5djE3YTUgNSAwIDAgMCA1IDVoMTciCiAgICAgICAgZmlsbD0ibm9u"
+    "ZSIgc3Ryb2tlPSIjZjFmNmZmIiBzdHJva2Utd2lkdGg9IjQuNzUiIHN0cm9rZS1saW5lY2FwPSJy"
+    "b3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPgogIDxwYXRoIGQ9Ik01MiA3MVY1N2ExMiAx"
+    "MiAwIDAgMSAyNCAwdjIiCiAgICAgICAgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMmRkNGJmIiBzdHJv"
+    "a2Utd2lkdGg9IjYiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDxyZWN0IHg9IjQyIiB5PSI2"
+    "OCIgd2lkdGg9IjQ0IiBoZWlnaHQ9IjI2IiByeD0iNiIgZmlsbD0iIzU4YTZmZiIvPgogIDxnIGZp"
+    "bGw9IiMwZDE3MjgiPgogICAgPGNpcmNsZSBjeD0iNTIiIGN5PSI4MSIgcj0iMy40Ii8+CiAgICA8"
+    "Y2lyY2xlIGN4PSI2NCIgY3k9IjgxIiByPSIzLjQiLz4KICAgIDxjaXJjbGUgY3g9Ijc2IiBjeT0i"
+    "ODEiIHI9IjMuNCIvPgogIDwvZz4KPC9zdmc+Cg=="
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -268,7 +289,36 @@ HTML_TEMPLATE = """\
       font-family: var(--font);
       font-size: 14px;
       line-height: 1.6;
-      padding: 24px;
+    }}
+
+    .report-layout {{
+      display: grid;
+      grid-template-columns: 244px minmax(0, 1fr);
+      min-height: 100vh;
+    }}
+
+    .report-sidebar {{
+      position: sticky;
+      top: 0;
+      align-self: start;
+      height: 100vh;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      padding: 20px 16px;
+      background: var(--bg2);
+      border-right: 1px solid var(--border);
+    }}
+
+    .report-main {{
+      min-width: 0;
+      padding: clamp(16px, 3vw, 40px);
+    }}
+
+    .report-title {{
+      font-size: 1.6rem;
+      margin: 0 0 4px;
     }}
 
     a {{ color: var(--accent); text-decoration: none; }}
@@ -282,6 +332,7 @@ HTML_TEMPLATE = """\
       color: var(--muted);
       font-size: 0.85rem;
       margin-bottom: 28px;
+      overflow-wrap: anywhere;
     }}
 
     /* ------------------------------------------------------------------ */
@@ -289,14 +340,14 @@ HTML_TEMPLATE = """\
     /* ------------------------------------------------------------------ */
     .cards {{
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr));
       gap: 12px;
       margin-bottom: 8px;
     }}
 
     .cards-findings {{
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr));
       gap: 12px;
       margin-bottom: 32px;
     }}
@@ -314,7 +365,6 @@ HTML_TEMPLATE = """\
       letter-spacing: .06em;
       color: var(--muted);
       margin-bottom: 6px;
-      white-space: nowrap;
     }}
 
     .card .value {{
@@ -687,21 +737,22 @@ HTML_TEMPLATE = """\
     /* ------------------------------------------------------------------ */
     /*  Header / logo                                                       */
     /* ------------------------------------------------------------------ */
-    .page-header {{
+    .report-brand {{
       display: flex;
       align-items: center;
-      gap: 20px;
-      margin-bottom: 4px;
+      gap: 12px;
     }}
 
-    .page-header img {{
-      height: 52px;
-      width: auto;
-      flex-shrink: 0;
+    .report-brand img {{
+      width: 44px;
+      height: 44px;
+      flex: none;
     }}
 
-    .page-header-right {{
-      margin-left: auto;
+    .report-brand h1 {{
+      font-size: 1rem;
+      line-height: 1.3;
+      margin: 0;
     }}
 
     .theme-btn {{
@@ -722,8 +773,9 @@ HTML_TEMPLATE = """\
       color: var(--accent);
     }}
 
-    .page-header-text h1 {{
-      margin-bottom: 0;
+    .report-sidebar .theme-btn {{
+      align-self: flex-start;
+      margin-top: auto;
     }}
 
     /* ------------------------------------------------------------------ */
@@ -751,43 +803,47 @@ HTML_TEMPLATE = """\
     }}
 
     /* ------------------------------------------------------------------ */
-    /*  Tabs                                                                */
+    /*  Report navigation                                                   */
     /* ------------------------------------------------------------------ */
-    .tab-bar {{
+    .report-nav {{
       display: flex;
-      gap: 2px;
-      border-bottom: 2px solid var(--border);
-      margin-bottom: 24px;
+      flex-direction: column;
+      gap: 4px;
+    }}
+
+    .nav-item {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
       flex-wrap: wrap;
-    }}
-
-    .tab-btn {{
-      background: transparent;
-      border: none;
-      border-bottom: 2px solid transparent;
-      margin-bottom: -2px;
-      color: var(--muted);
-      cursor: pointer;
-      font-family: var(--font);
+      gap: 4px 8px;
+      border: 1px solid transparent;
+      border-radius: var(--radius);
+      color: var(--text);
       font-size: 13px;
-      padding: 8px 16px;
-      transition: color .15s, border-color .15s;
-      white-space: nowrap;
+      padding: 7px 10px;
     }}
 
-    .tab-btn:hover {{ color: var(--text); }}
-
-    .tab-btn.active {{
-      color: var(--text-head);
-      border-bottom-color: var(--accent);
+    a.nav-item:hover {{
+      color: var(--accent);
+      text-decoration: none;
     }}
 
-    .tab-btn.empty {{
-      color: #444d56;
-      cursor: default;
+    .nav-item[aria-current] {{
+      color: var(--accent);
+      border-color: currentColor;
+      font-weight: 600;
     }}
 
-    .tab-btn.empty:hover {{ color: #444d56; }}
+    .nav-item[aria-disabled] {{
+      color: var(--muted);
+      opacity: 0.75;
+    }}
+
+    a.nav-item:focus-visible, .theme-btn:focus-visible {{
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }}
 
     .tab-pane {{ display: none; }}
     .tab-pane.active {{ display: block; }}
@@ -807,9 +863,14 @@ HTML_TEMPLATE = """\
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 20px;
-      flex: 1;
-      min-width: 280px;
+      flex: 1 1 260px;
+      min-width: 0;
+      position: relative;
     }}
+
+    .chart-card-wide {{ flex: 2 1 340px; }}
+    .chart-card-full {{ flex: 1 1 100%; }}
+    .chart-card-full {{ flex: 1 1 100%; }}
 
     .chart-card h3 {{
       font-size: 0.8rem;
@@ -819,12 +880,10 @@ HTML_TEMPLATE = """\
       margin-bottom: 16px;
     }}
 
-    .chart-card {{
-      position: relative;
-    }}
-
     .chart-card canvas {{
       display: block;
+      max-width: 100%;
+      height: auto;
       margin: 0 auto;
     }}
 
@@ -874,25 +933,89 @@ HTML_TEMPLATE = """\
       border-radius: 50%;
       flex-shrink: 0;
     }}
+
+    .chart-note {{ color: var(--muted); font-size: 12px; }}
+
+    .word-chart {{
+      list-style: none;
+      display: grid;
+      gap: 8px;
+      margin-top: 14px;
+      font-size: 13px;
+    }}
+
+    .word-chart li {{
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 3fr) 7ch;
+      align-items: center;
+      gap: 12px;
+    }}
+
+    .word-label {{ overflow-wrap: anywhere; }}
+    .word-count {{ text-align: right; font-variant-numeric: tabular-nums; }}
+
+    .word-track {{
+      background: var(--bg3);
+      border-radius: 4px;
+      overflow: hidden;
+    }}
+
+    .word-bar {{
+      display: block;
+      height: 10px;
+      background: var(--accent);
+      border-radius: inherit;
+    }}
+
+    @media (max-width: 760px) {{
+      .report-layout {{ grid-template-columns: minmax(0, 1fr); }}
+
+      .report-sidebar {{
+        position: static;
+        height: auto;
+        overflow: visible;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 12px;
+        border-right: 0;
+        border-bottom: 1px solid var(--border);
+      }}
+
+      .report-nav {{
+        grid-column: 1 / -1;
+        grid-row: 2;
+        flex-direction: row;
+        flex-wrap: wrap;
+      }}
+
+      .report-sidebar .theme-btn {{
+        align-self: center;
+        margin-top: 0;
+      }}
+
+      .reuse-header {{ flex-wrap: wrap; }}
+    }}
   </style>
 </head>
 <body>
-
-<div class="page-header">
-{logo_img}  <div class="page-header-text">
-    <h1>SecretsDump Report</h1>
+<div class="report-layout">
+<aside class="report-sidebar">
+  <div class="report-brand">
+{logo_img}    <h1>SecretsDump Report</h1>
   </div>
-  <div class="page-header-right">
-    <button class="theme-btn" id="theme-btn" onclick="toggleTheme()">☀ Light</button>
-  </div>
-</div>
-<p class="subtitle">
-  Source: <strong>{source_file}</strong> &nbsp;&bull;&nbsp;
-  Generated: <strong>{generated}</strong> &nbsp;&bull;&nbsp;
-  Total entries: <strong>{total}</strong>
-</p>
-
-{tab_bar}
+{report_nav}
+  <button type="button" class="theme-btn" id="theme-btn" onclick="toggleTheme()">☀ Light</button>
+</aside>
+<main class="report-main">
+<header>
+  <h2 class="report-title" id="report-title">Summary</h2>
+  <p class="subtitle">
+    Source: <strong>{source_file}</strong> &nbsp;&bull;&nbsp;
+    Generated: <strong>{generated}</strong> &nbsp;&bull;&nbsp;
+    Total entries: <strong>{total}</strong>
+  </p>
+</header>
 
 <!-- ======================================================= Summary -->
 <div class="tab-pane active" id="pane-summary">
@@ -974,25 +1097,23 @@ function toggleTheme() {{
   }}
 }})();
 
-// ---------------------------------------------------------- tabs
-function switchTab(id) {{
-  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-  const pane = document.getElementById('pane-' + id);
-  const btn  = document.getElementById('tab-' + id);
-  if (pane) pane.classList.add('active');
-  if (btn)  btn.classList.add('active');
-  history.replaceState(null, '', '#' + id);
-  ['cracked-table', 'blank-table', 'lm-table'].forEach(tid => {{
-    const t = document.getElementById(tid);
-    if (t && t.closest('.tab-pane') === pane && !_pageState[tid]) paginate(tid);
-  }});
+// ---------------------------------------------------------- report navigation
+function showReportSection() {{
+  const requested = location.hash.slice(1);
+  const link = document.getElementById('nav-' + requested) || document.getElementById('nav-summary');
+  const pane = document.getElementById('pane-' + link.id.slice(4));
+  document.querySelectorAll('.tab-pane.active').forEach(p => p.classList.remove('active'));
+  document.querySelector('.report-nav [aria-current]')?.removeAttribute('aria-current');
+  pane.classList.add('active');
+  link.setAttribute('aria-current', 'location');
+  document.getElementById('report-title').textContent = link.querySelector('.nav-label').textContent;
+  const table = pane.querySelector('table[id]');
+  if (table && !_pageState[table.id]) paginate(table.id);
 }}
 
 window.addEventListener('hashchange', () => {{
-  const id = location.hash.replace('#', '') || 'summary';
-  const btn = document.getElementById('tab-' + id);
-  if (btn && !btn.classList.contains('empty')) switchTab(id);
+  showReportSection();
+  window.scrollTo(0, 0);
 }});
 
 // ---------------------------------------------------------- collapsibles
@@ -1222,14 +1343,7 @@ function changePageSize(tableId) {{
 }}
 
 document.addEventListener('DOMContentLoaded', () => {{
-  const id = location.hash.replace('#', '') || 'summary';
-  const btn = document.getElementById('tab-' + id);
-  if (btn && !btn.classList.contains('empty')) {{
-    switchTab(id);
-  }} else {{
-    switchTab('summary');
-  }}
-  // draw charts after tab is visible
+  showReportSection();
   if (typeof _drawCharts === 'function') _drawCharts();
 }});
 </script>
@@ -1250,6 +1364,8 @@ document.addEventListener('DOMContentLoaded', () => {{
     <span>SecretsDump Reporter v{version}</span>
   </span>
 </footer>
+</main>
+</div>
 </body>
 </html>
 """
@@ -1552,8 +1668,41 @@ def build_lm_section(analysis: dict, has_sensitive: bool, redacted: bool = False
 """
 
 
-def build_charts_section(accounts: list[dict], cracked: dict[str, str]) -> str:
-    """Build pie + bar charts for the summary tab. Returns empty string if no potfile."""
+def build_password_words_chart(passwords: set[str]) -> str:
+    """Rank runs of letters by how many distinct passwords contain them."""
+    counts: Counter[str] = Counter()
+    for password in passwords:
+        runs = ("".join(chars) for is_letter, chars in groupby(password, str.isalpha) if is_letter)
+        counts.update({word.casefold() for word in runs if len(word) >= 3})
+
+    if counts:
+        top_words = sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:10]
+        max_count = top_words[0][1]
+        rows = "\n".join(
+            f'    <li><bdi class="word-label">{escape(word)}</bdi>'
+            f'<span class="word-track" aria-hidden="true">'
+            f'<span class="word-bar" style="width:{count / max_count:.2%}"></span></span>'
+            f'<span class="word-count">{count}</span></li>'
+            for word, count in top_words
+        )
+        detail = f"""\
+  <p class="chart-note">Top 10 runs of 3+ letters, ignoring case. Counts show how many distinct cracked user passwords contain each word.</p>
+  <ol class="word-chart" role="list" aria-labelledby="password-words-title">
+{rows}
+  </ol>"""
+    else:
+        detail = '  <p class="chart-note">No words of 3 or more consecutive letters found.</p>'
+
+    return f"""\
+  <div class="chart-card chart-card-full">
+    <h3 id="password-words-title">Most Common Words in Cracked Passwords</h3>
+{detail}
+  </div>
+"""
+
+
+def build_charts_section(accounts: list[dict], cracked: dict[str, str], redacted: bool = False) -> str:
+    """Build summary charts, omitting plaintext-derived labels from redacted reports."""
     if not cracked:
         return ""
 
@@ -1591,6 +1740,10 @@ def build_charts_section(accounts: list[dict], cracked: dict[str, str]) -> str:
         for d in pie_data
     )
 
+    words_chart = ""
+    if cracked_unique and not redacted:
+        words_chart = build_password_words_chart({cracked[h] for h in cracked_unique})
+
     return f"""\
 <div class="charts-row">
   <div class="chart-card">
@@ -1598,12 +1751,12 @@ def build_charts_section(accounts: list[dict], cracked: dict[str, str]) -> str:
     <canvas id="pie-chart" width="180" height="180"></canvas>
     <div class="chart-legend">{legend_html}</div>
   </div>
-  <div class="chart-card" style="flex:2; min-width:360px;">
+  <div class="chart-card chart-card-wide">
     <h3>Cracked Password Lengths</h3>
     <canvas id="bar-chart" width="560" height="200"></canvas>
     <div class="chart-tooltip" id="bar-tooltip"></div>
   </div>
-</div>
+{words_chart}</div>
 <script>
 function _drawCharts() {{
   const light = document.body.classList.contains('light');
@@ -1619,29 +1772,30 @@ function _drawCharts() {{
 
 
 
-def build_tab_bar(analysis: dict, reuse_cracked_count: int, cracked_account_count: int, has_cracked_potfile: bool, has_sensitive: bool) -> str:
-    reuse_label = "Password Reuse"
-    if reuse_cracked_count:
-        reuse_label += f' <span style="font-size:0.8em;color:var(--warn);">({reuse_cracked_count} Cracked)</span>'
-
-    tabs = [
-        ("summary", "Summary",          True),
-        ("reuse",   reuse_label,         bool(analysis["sorted_reused"])),
+def build_report_nav(analysis: dict, reuse_cracked_count: int, cracked_account_count: int, has_cracked_potfile: bool) -> str:
+    sections = [
+        ("summary", "Summary", True),
+        ("reuse", "Password Reuse", bool(analysis["sorted_reused"])),
     ]
     if has_cracked_potfile:
-        tabs.append(("cracked", "Cracked Passwords", bool(cracked_account_count)))
-    tabs += [
+        sections.append(("cracked", "Cracked Passwords", bool(cracked_account_count)))
+    sections += [
         ("blank", "Blank Passwords", bool(analysis["blank_accounts"])),
-        ("lm",    "LM Hashes",       bool(analysis["lm_accounts"])),
+        ("lm", "LM Hashes", bool(analysis["lm_accounts"])),
     ]
 
-    buttons = []
-    for tab_id, label, has_content in tabs:
-        cls = "tab-btn" + ("" if has_content else " empty")
-        onclick = f'onclick="switchTab(\'{tab_id}\')"' if has_content else ""
-        buttons.append(f'  <button class="{cls}" id="tab-{tab_id}" {onclick}>{label}</button>')
+    items = []
+    for section_id, label, has_content in sections:
+        text = f'<span class="nav-label">{label}</span>'
+        if section_id == "reuse" and reuse_cracked_count:
+            text += badge(f"{reuse_cracked_count} cracked", "cracked")
+        if has_content:
+            current = ' aria-current="location"' if section_id == "summary" else ''
+            items.append(f'  <a class="nav-item" id="nav-{section_id}" href="#{section_id}"{current}>{text}</a>')
+        else:
+            items.append(f'  <span class="nav-item" role="link" aria-disabled="true">{text}</span>')
 
-    return '<div class="tab-bar">\n' + '\n'.join(buttons) + '\n</div>'
+    return '  <nav class="report-nav" aria-label="Report sections">\n' + '\n'.join(items) + '\n  </nav>'
 
 
 def write_html(accounts: list[dict], analysis: dict, cracked: dict[str, str], has_sensitive: bool, source_file: str, out_path: str, redacted: bool = False) -> None:
@@ -1681,14 +1835,13 @@ def write_html(accounts: list[dict], analysis: dict, cracked: dict[str, str], ha
     else:
         sensitive_card = ""
 
-    logo_img = f'  <img src="{_LOGO_DATA_URI}" alt="Logo" />\n'
+    logo_img = f'    <img src="{_LOGO_DATA_URI}" width="44" height="44" alt="" />\n'
 
-    tab_bar = build_tab_bar(
+    report_nav = build_report_nav(
         analysis,
         reuse_cracked_count=cracked_reuse_count,
         cracked_account_count=cracked_account_count,
         has_cracked_potfile=bool(cracked),
-        has_sensitive=has_sensitive,
     )
     html = HTML_TEMPLATE.format(
         source_file=Path(source_file).name,
@@ -1702,8 +1855,8 @@ def write_html(accounts: list[dict], analysis: dict, cracked: dict[str, str], ha
         reused_account_count=reused_account_count,
         cracked_card=cracked_card,
         sensitive_card=sensitive_card,
-        tab_bar=tab_bar,
-        charts_section=build_charts_section(accounts, cracked),
+        report_nav=report_nav,
+        charts_section=build_charts_section(accounts, cracked, redacted=redacted),
         reuse_section=build_reuse_section(analysis, cracked, has_sensitive, redacted=redacted),
         cracked_section=build_cracked_section(accounts, cracked, has_sensitive, redacted=redacted),
         blank_section=build_blank_section(analysis, has_sensitive),
