@@ -1,5 +1,7 @@
 # SecretsDump Reporter
 
+<img src="https://raw.githubusercontent.com/yepskotch/SecretsDumpReporter/main/logo-password-audit.svg" alt="SecretsDump Reporter logo" width="80" height="80">
+
 Parses the output of [Impacket](https://github.com/fortra/impacket)'s `secretsdump.py` (run with `-user-status`) and produces a self-contained HTML report and a CSV file for further analysis.
 
 ![SecretsDump Reporter screenshot](https://raw.githubusercontent.com/yepskotch/SecretsDumpReporter/main/screenshot.png)
@@ -12,7 +14,9 @@ Parses the output of [Impacket](https://github.com/fortra/impacket)'s `secretsdu
 - **LM hash detection** — flags accounts with LM hashing enabled (trivially crackable)
 - **Sensitive account detection** — flag privileged or service accounts using a regex pattern or file
 - **Potfile integration** — match a hashcat `.potfile` to surface cracked passwords in the report
+- **Common password words** — chart the most frequent runs of 3 or more letters across distinct cracked user passwords, ignoring case. The chart appears only in the full report.
 - **Two HTML reports** — full report with clickable hashes/passwords and a redacted version safe to share
+- **Full-width report layout** — a sticky sidebar keeps report sections within reach on desktop and moves above the content on narrow screens
 - **CSV export** — full account list with reuse group, cracked password, blank password, LM hash and sensitive flags
 - **Self-contained output** — the HTML report embeds all assets (logo, CSS, JS); no internet connection required to view it
 - No external Python dependencies — stdlib only
